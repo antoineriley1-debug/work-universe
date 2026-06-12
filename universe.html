@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link href="https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap" rel="stylesheet">
 <title>Work Universe OS — MedStar Portfolio Command</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
@@ -374,6 +375,58 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 body.no-motion *,body.no-motion *::before,body.no-motion *::after{animation:none!important;transition:none!important}
 
+
+.twiney-sig{font-family:"Great Vibes","Brush Script MT","Segoe Script","Snell Roundhand",cursive;font-size:19px;color:var(--cyan2);text-shadow:0 0 14px rgba(86,214,232,.45);letter-spacing:.04em;margin-top:3px}
+
+/* ================= MOBILE ================= */
+#menubtn{display:none;align-items:center;background:var(--glass2);border:1px solid var(--stroke);color:var(--silver);padding:7px 11px;font-size:15px;line-height:1;clip-path:polygon(7px 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%,0 7px)}
+#navveil{display:none;position:fixed;inset:54px 0 0 0;background:rgba(3,5,8,.62);backdrop-filter:blur(2px);z-index:64}
+@media (max-width:900px){
+  #shell{grid-template-columns:1fr;grid-template-rows:54px 1fr}
+  #topbar{grid-column:1;gap:8px;padding:0 10px}
+  #menubtn{display:inline-flex}
+  #brand{min-width:0}
+  #brand .sub{display:none}
+  #brand .sig{font-size:12px;letter-spacing:.12em}
+  #sysline #clock,#sysline #alertbeacon{display:none}
+  #gsearch{max-width:none;min-width:0;flex:1}
+  #gsearch kbd{display:none}
+  #gsearch input{padding:9px 10px 9px 30px}
+  #topbtns{margin-left:0}
+  #topbtns .tbtn{display:none}
+  #topbtns .tbtn.mic{display:inline-flex;padding:7px 10px}
+  #nav{position:fixed;top:54px;bottom:0;left:0;width:min(78vw,280px);transform:translateX(-103%);transition:transform .25s var(--ease);z-index:65;box-shadow:24px 0 60px rgba(0,0,0,.55)}
+  body.navopen #nav{transform:none}
+  body.navopen #navveil{display:block}
+  .navitem{padding:11px 12px;font-size:12px}
+  #main{padding:12px 12px 132px}
+  #main::before{left:6px;right:6px;top:60px;bottom:8px}
+  h1.pg{font-size:17px}
+  .pgsub{font-size:12px}
+  .mc{grid-template-columns:1fr}
+  .mc .mccenter{order:-1;grid-column:auto}
+  .mcbottom{grid-template-columns:1fr}
+  .mccenter .grid{grid-template-columns:1fr !important}
+  #umap{height:330px}
+  #uhover{width:200px}
+  #drawer{width:100vw;right:-103vw}
+  .formrow{grid-template-columns:1fr;gap:4px;margin-bottom:12px}
+  .formrow label{padding-top:0}
+  input,select,textarea{font-size:16px}
+  .panel{overflow-x:auto}
+  table.tbl{min-width:540px}
+  .heat{overflow-x:auto}
+  .heatcell{min-width:26px}
+  #orbdock{right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px))}
+  #orb{width:56px;height:56px}
+  #orbsay{max-width:62vw}
+  .msg{max-width:92%}
+  #brainlog{max-height:calc(100vh - 330px)}
+  #graphwrap{height:calc(100vh - 250px)}
+  .glegend{display:none}
+  .toast{max-width:92vw}
+}
+
 /* ================= PRINT (unchanged engine) ================= */
 #printdock{display:none}
 @media print{
@@ -397,6 +450,7 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{animation:none
 <body>
 <div id="shell">
   <div id="topbar">
+    <button id="menubtn" onclick="toggleNav()">☰</button>
     <div id="brand"><span class="mark"></span><span><span class="sig">UNIVERSE<b>·OS</b></span><span class="sub">MedStar 10-Site Command</span></span></div>
     <div id="sysline"><span id="clock">--:--:--</span><span id="cloudchip"></span><span id="alertbeacon" title="Open attention queue"><span class="led idle" id="beaconled"></span><span id="beacontxt">scanning</span></span></div>
     <div id="gsearch"><span class="ico">⌖</span><input id="gsearchinput" placeholder="Command search — find or ask anything…" readonly><kbd>CTRL K</kbd></div>
@@ -407,6 +461,7 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{animation:none
     </div>
   </div>
   <nav id="nav"></nav>
+  <div id="navveil" onclick="closeNav()"></div>
   <main id="main"></main>
 </div>
 <div id="orbdock"><div id="orbsay"></div><div id="orb" class="idle" title="Voice assistant"><div class="eq"><i></i><i></i><i></i><i></i></div></div></div>
@@ -574,7 +629,7 @@ const blankDB=()=>({meta:{version:1,created:nowISO(),seeded:false},
   hospitals:[],projects:[],vendors:[],people:[],emails:[],documents:[],workOrders:[],
   invoices:[],assets:[],risks:[],actions:[],notes:[],deficiencies:[],requirements:[],
   evidence:[],calEvents:[],reports:[],links:[]});
-const defSettings=()=>({voice:true,voiceRate:1.0,pinned:[],motion:"auto",mcpSmartsheet:false,mcpMail:false,mcpDrive:false,preparedBy:"Antoine W. Riley Sr., Director of Systems Maintenance"});
+const defSettings=()=>({voice:true,voiceRate:1.0,pinned:[],motion:"auto",councilReports:true,autoCommit:false,mcpSmartsheet:false,mcpMail:false,mcpDrive:false,preparedBy:"Antoine W. Riley Sr., Director of Systems Maintenance"});
 
 const saveDB=debounce(async()=>{await Store.set(DB_KEY,DB)},600);
 const saveAudit=debounce(async()=>{AUDIT=AUDIT.slice(-1200);await Store.set(AUDIT_KEY,AUDIT)},800);
@@ -818,8 +873,8 @@ function fuzzyFind(type,name){
 function hospByCode(code){if(!code)return null;return DB.hospitals.find(h=>h.code.toLowerCase()===String(code).toLowerCase())||DB.hospitals.find(h=>h.name.toLowerCase().includes(String(code).toLowerCase()))||null}
 
 let PENDING=null; // {ex, raw:{text,b64,media}, filename, sourceKind}
-function commitExtraction(){
-  const ex=PENDING.ex, hosp=hospByCode($("#rvHosp").value)||null;
+function commitExtraction(auto){
+  const ex=PENDING.ex, hosp=hospByCode(auto?(ex.hospital||""):($("#rvHosp")?$("#rvHosp").value:""))||null;
   const created=[],linkedTo=[];
   const doc=addRec("document",{title:PENDING.filename||("Pasted "+(ex.docType||"note")),docType:ex.docType,summary:ex.summary,text:(PENDING.raw.text||"").slice(0,40000),hospitalId:hosp?hosp.id:null,urgency:ex.urgency||null,complianceTags:ex.complianceTags||[]},"ai");
   if(PENDING.raw.b64&&PENDING.raw.b64.length<2600000){doc.hasFile=true;Store.set("wuos:file:"+doc.id,{media:PENDING.raw.media||"application/octet-stream",b64:PENDING.raw.b64})}
@@ -842,8 +897,8 @@ function commitExtraction(){
   (ex.actionItems||[]).forEach(ai2=>{const r=addRec("action",{title:ai2.title,owner:ai2.owner||"",due:ai2.due||null,status:"Open",hospitalId:hosp?hosp.id:null},"ai");created.push(r);link(doc.id,r.id,"source","ai");if(hosp)link(r.id,hosp.id,"site","ai")});
   if((ex.openQuestions||[]).length)addRec("note",{title:"Open questions — "+(PENDING.filename||"upload"),text:ex.openQuestions.join("\n"),hospitalId:hosp?hosp.id:null},"ai");
   if(PENDING.sourceKind==="email"){const em=addRec("email",{subject:PENDING.filename||(ex.summary||"Email").slice(0,70),body:(PENDING.raw.text||"").slice(0,20000),from:(ex.people||[])[0]||"",urgency:ex.urgency||3,summary:ex.summary,hospitalId:hosp?hosp.id:null},"ai");link(em.id,doc.id,"document","ai");if(hosp)link(em.id,hosp.id,"site","ai");created.push(em)}
-  audit("ingest","document",doc.id,"Ingested "+(PENDING.filename||"pasted text")+" → "+created.length+" records","ai");
-  PENDING=null;toast(created.length+" records created and linked","ok");go("#/e/document/"+doc.id);
+  audit(auto?"auto-commit":"ingest","document",doc.id,(auto?"AUTO-COMMITTED (≥90% confidence) ":"Ingested ")+(PENDING.filename||"pasted text")+" → "+created.length+" records","ai");
+  PENDING=null;toast((auto?"⚡ Auto-committed: ":"")+created.length+" records created and linked","ok");go("#/e/document/"+doc.id);
 }
 
 /* ============================ SHARED RENDER HELPERS ============================ */
@@ -958,20 +1013,20 @@ function togglePin(id,ev){if(ev)ev.stopPropagation();SETTINGS.pinned=SETTINGS.pi
 /* ---------- Universe Map ---------- */
 function nodeRecent(h){const ids=new Set([h.id,...linked(h.id).map(x=>x.id)]);return AUDIT.slice(-60).some(e=>ids.has(e.entityId)&&daysFrom(e.at)<=1&&e.src!=="seed")}
 function drawUMap(){
-  const host=$("#umapsvg");if(!host)return;const W=host.clientWidth||860,H=430,cx=W/2,cy=H/2;
-  const hs=DB.hospitals;const R1=Math.min(W,H)/2-78,R2=R1*0.56;
+  const host=$("#umapsvg");if(!host)return;const W=host.clientWidth||860,H=host.clientHeight||430,cx=W/2,cy=H/2;const M=W<500;
+  const hs=DB.hospitals;const R1=Math.min(W,H)/2-(M?46:78),R2=R1*0.56;
   const pos=hs.map((h,i)=>{const ring=i%2?R1:R2;const a=(i/hs.length)*2*Math.PI-Math.PI/2;return{h,x:cx+ring*Math.cos(a),y:cy+ring*Math.sin(a)}});
-  const arc=(score)=>{const r=20,c=2*Math.PI*r;return `stroke-dasharray:${c};stroke-dashoffset:${c*(1-score/100)}`};
+  const arc=(score,r)=>{const c=2*Math.PI*r;return `stroke-dasharray:${c};stroke-dashoffset:${c*(1-score/100)}`};
   host.innerHTML=`
    <circle class="orbitring" cx="${cx}" cy="${cy}" r="${R2}"/><circle class="orbitring" cx="${cx}" cy="${cy}" r="${R1}"/>
    ${pos.map(p=>`<line class="uline ${nodeRecent(p.h)?"hot":""}" x1="${cx}" y1="${cy}" x2="${p.x}" y2="${p.y}"/>`).join("")}
-   <g class="ucore" onclick="go('#/brain')"><circle class="c1" cx="${cx}" cy="${cy}" r="34"/><circle class="c2" cx="${cx}" cy="${cy}" r="44"/>
+   <g class="ucore" onclick="go('#/brain')"><circle class="c1" cx="${cx}" cy="${cy}" r="${M?26:34}"/><circle class="c2" cx="${cx}" cy="${cy}" r="${M?34:44}"/>
      <text x="${cx}" y="${cy-3}">AI CORE</text><text x="${cx}" y="${cy+10}" style="fill:var(--cyan2);font-size:8px">${DB.links.length} LINKS</text></g>
    ${pos.map(p=>{const sev=hospSeverity(p.h),sc=hHealth(p.h);const col=sc>=75?"var(--ok)":sc>=50?"var(--amber)":"var(--crit)";
      return `<g class="unode sev-${sev} ${nodeRecent(p.h)?"recent":""}" transform="translate(${p.x},${p.y})"
         onmouseenter="uHover('${p.h.id}',${p.x},${p.y})" onmouseleave="uHoverOff()" onclick="uOpen(this,'${p.h.id}')">
-        <circle class="upulse" r="26"/><circle class="ring-bg" r="24"/>
-        <circle class="ring-arc" r="20" stroke="${col}" style="${arc(sc)};filter:drop-shadow(0 0 6px ${col})"/>
+        <circle class="upulse" r="${M?18:26}"/><circle class="ring-bg" r="${M?16:24}"/>
+        <circle class="ring-arc" r="${M?13:20}" stroke="${col}" style="${arc(sc,M?13:20)};filter:drop-shadow(0 0 6px ${col})"/>
         <text class="ucode" y="-1">${esc(p.h.code)}</text><text class="uscore" y="11">${sc}</text></g>`}).join("")}`;
   $("#umapfoot").textContent="HOSPITAL UNIVERSE · "+hs.length+" NODES · HEALTH "+portfolioHealth()+"% · LIVE";
 }
@@ -1008,7 +1063,7 @@ function orb(state,msg){const o=$("#orb");if(!o)return;o.className=state||"idle"
 function orbSay(msg,timeout){const el=$("#orbsay");if(!el)return;el.textContent=msg;el.classList.add("on");clearTimeout(ORBSEQ);if(timeout)ORBSEQ=setTimeout(()=>el.classList.remove("on"),timeout)}
 function orbOff(){const el=$("#orbsay");if(el)el.classList.remove("on");orb("idle")}
 function orbThinkSeq(kind){
-  const seqs={brain:["Searching hospital memory…","Tracing connections…","Composing answer…"],
+  const seqs={council:["Convening council…","Independent draft…","Anonymous peer review…","Chairman synthesis…"],brain:["Searching hospital memory…","Tracing connections…","Composing answer…"],
     ingest:["Scanning document…","Extracting entities…","Mapping relationships…"],
     report:["Pulling live records…","Building report…"],brief:["Reviewing overnight changes…","Checking what's overdue…","Preparing briefing…"]};
   const s=seqs[kind]||seqs.brain;let i=0;orb("thinking",s[0]);
@@ -1026,7 +1081,7 @@ Views.dashboard=()=>{
     pinned=(SETTINGS.pinned||[]).map(rec).filter(Boolean),
     upcoming=[...oA.filter(a=>a.due&&!isPast(a.due)),...DB.requirements.filter(q=>q.nextDue&&!isPast(q.nextDue))].map(r=>({r,d:daysUntil(r.due||r.nextDue)})).filter(x=>x.d<=14).sort((a,b)=>a.d-b.d).slice(0,7);
   return `<div class="view">
-   <div class="pghead"><div class="grow"><div class="eyebrow am">MISSION CONTROL // ALL SYSTEMS</div><h1 class="pg">Work Universe</h1></div>
+   <div class="pghead"><div class="grow"><div class="eyebrow am">MISSION CONTROL // ALL SYSTEMS</div><h1 class="pg">Work Universe</h1><div class="twiney-sig">Designed, Developed and Deployed by Twiney</div></div>
      <div class="ringwrap panel tight heads-up" style="padding:9px 14px">${ringSVG(portfolioHealth(),58,6)}<div class="ringlbl"><div class="rv" data-count="${portfolioHealth()}">0</div><div class="rl">portfolio<br>health</div></div></div>
      <button class="btn primary" onclick="go('#/brain')">◎ Ask the Brain</button></div>
    ${pinned.length?`<div class="flexr" style="margin-bottom:12px"><span class="eyebrow">Pinned</span>${pinned.map(chip).join("")}</div>`:""}
@@ -1178,6 +1233,13 @@ async function runExtraction(blocks,raw,filename,sourceKind){
     await step("match confidence — hospital "+(conf.hospital??(ex.hospital?85:20))+"% · vendor "+(conf.vendor??((ex.vendors||[]).length?80:0))+"% · project "+(conf.project??((ex.projects||[]).length?70:0))+"%","am");
     await step("relationship mapping → review board","ok");
     PENDING={ex,raw,filename,sourceKind};
+    const cc=ex.confidence||{};const aH=cc.hospital!=null?cc.hospital:(ex.hospital?85:20);
+    const aV=(ex.vendors||[]).length?(cc.vendor!=null?cc.vendor:80):100;
+    const aP=(ex.projects||[]).length?(cc.project!=null?cc.project:70):100;
+    if(SETTINGS.autoCommit&&ex.hospital&&Math.min(aH,aV,aP)>=90){
+      await step("⚡ AUTO-COMMIT — all match confidences ≥90% (toggle in Settings)","ok");
+      commitExtraction(true);return;
+    }
     renderReview();
   }catch(e){orbDone();procLog("✗ "+e.message,"dim");toast(e.message,"err")}
 }
@@ -1413,12 +1475,25 @@ function repHead(title,h){
   <p>${h?esc(h.name)+" ("+esc(h.code)+")":"All Sites"}</p><p>Reporting period: through ${fmtD(todayISO())}</p>
   <p>Prepared by: ${esc(SETTINGS.preparedBy)}<br>Date generated: ${fmtD(todayISO())}</p></div>`;
 }
-function buildBinder(hid){
+async function buildBinder(hid){
   const h=rec(hid);const qs=byHosp(DB.requirements,h.id);qs.forEach(q=>q.status=reqAutoStatus(q));
   const dfs=byHosp(DB.deficiencies,h.id),missing=qs.filter(q=>!["Ready","Complete"].includes(q.status));
   const docs=byHosp(DB.documents,h.id);
+  let aiSum=null;
+  try{
+    const dg="Hospital: "+h.name+" ("+h.code+"). TJC readiness "+tjcScore(h.id)+"% ("+qs.filter(q=>["Ready","Complete"].includes(q.status)).length+" of "+qs.length+" items evidence-ready). "+
+      "Open risks: "+(byHosp(DB.risks,h.id).filter(r=>r.status==="Open").map(r=>r.severity+" — "+r.title).join("; ")||"none")+". "+
+      "Open deficiencies: "+(dfs.filter(d=>d.status!=="Closed").map(d=>d.title+" (CAP owner "+(d.capOwner||"unassigned")+", due "+fmtD(d.capDue)+")").join("; ")||"none")+". "+
+      "Items missing evidence: "+(missing.slice(0,12).map(q=>q.title).join("; ")||"none")+". "+
+      "Active projects: "+(byHosp(DB.projects,h.id).filter(p=>p.status==="Active").map(p=>p.title).join("; ")||"none")+".";
+    const r=await aiCouncil("MATERIAL:\n"+dg+"\n\nWrite the executive summary for a Joint Commission survey-readiness binder for "+h.name+". Plain professional prose, no bullets, no headers, 150-200 words: overall readiness posture, the most material gaps, deficiency and corrective-action status, and what the preparer is actively driving. Use only the MATERIAL — no invented facts.");
+    aiSum=r;
+    addRec("report",{title:"Binder executive summary — "+h.code,body:r.text,critique:r.critique,council:true,generatedAt:nowISO(),preparedBy:SETTINGS.preparedBy},"ai");
+    audit("report","hospital",h.id,"Binder exec summary (council-reviewed)","ai");
+  }catch(e){audit("report","hospital",h.id,"Binder exec summary skipped: "+e.message,"ai")}
   let html=repHead("Joint Commission Survey Readiness Binder",h);
   html+=`<h2>Hospital Summary</h2><p>${esc(h.name)} survey readiness binder assembled from work orders, vendor reports, invoices, emails, and uploaded compliance documents in the Work Universe memory. ${qs.length} tracked compliance items, ${dfs.filter(d=>d.status!=="Closed").length} open deficiencies.</p>
+  ${aiSum?`<h2>Executive Summary <span style="font-size:9pt;font-weight:normal">(AI-drafted · council-reviewed · verify before submission)</span></h2><p>${esc(aiSum.text)}</p>`:""}
   <h2>Survey Readiness Score</h2><p style="font-size:24pt;margin:6pt 0"><b>${tjcScore(h.id)}%</b> &nbsp; (${qs.filter(q=>["Ready","Complete"].includes(q.status)).length} of ${qs.length} items evidence-ready)</p>
   <h2>Open Risk Summary</h2>${byHosp(DB.risks,h.id).filter(r=>r.status==="Open").map(r=>`<p><b>${esc(r.severity.toUpperCase())}</b> — ${esc(r.title)}. ${esc(r.summary||"")}</p>`).join("")||"<p>No open risks recorded.</p>"}`;
   (DB.meta.tjcCats||[]).forEach(c=>{const list=qs.filter(q=>q.category===c);if(!list.length)return;
@@ -1460,7 +1535,8 @@ Views.reports=()=>`<div class="view"><div class="pghead"><div class="grow"><div 
     <div class="panel tight"><div class="eyebrow" style="margin-bottom:6px">AI Drafts</div>
       <button class="btn" style="width:100%;margin-bottom:7px" onclick="aiReport('onepager')">One-Page Leadership Summary</button>
       <button class="btn" style="width:100%;margin-bottom:7px" onclick="aiReport('weekly')">Weekly Update Email (Nick / Tom)</button>
-      <button class="btn" style="width:100%" onclick="aiReport('top5')">Top 5 Issues Across All Hospitals</button></div>
+      <button class="btn" style="width:100%" onclick="aiReport('top5')">Top 5 Issues Across All Hospitals</button>
+      <label class="xs mut" style="display:flex;gap:6px;align-items:center;margin-top:10px;cursor:pointer"><input type="checkbox" id="councilChk" ${SETTINGS.councilReports?"checked":""} onchange="SETTINGS.councilReports=this.checked;saveSettings()"> ⚖ Council review — draft → anonymous critique → synthesis (3 passes)</label></div>
     <div class="panel tight"><div class="eyebrow" style="margin-bottom:6px">Printable — Portfolio</div>
       <button class="btn" style="width:100%;margin-bottom:7px" onclick="printStatusReport()">Hospital-by-Hospital Status</button>
       <button class="btn" style="width:100%;margin-bottom:7px" onclick="printVendorFollowup()">Vendor Follow-Up Report</button>
@@ -1470,9 +1546,18 @@ Views.reports=()=>`<div class="view"><div class="pghead"><div class="grow"><div 
       <button class="btn" style="width:100%;margin-bottom:7px" onclick="printVendorAging()">Vendor Aging (All Sites)</button>
       <button class="btn" style="width:100%" onclick="printInvReport(null,'missingpo')">Missing-PO Report</button></div></div>
   <div class="panel"><div class="panelhead"><span class="eyebrow am">Output</span>
-    <button class="btn sm right" onclick="navigator.clipboard.writeText($('#repout').innerText);toast('Copied','ok')">Copy</button>
-    <button class="btn sm" onclick="speak($('#repout').innerText)">▶ Speak</button></div>
+    <button class="btn sm right" onclick="navigator.clipboard.writeText(window.__lastReport||$('#repout').innerText);toast('Copied','ok')">Copy</button>
+    <button class="btn sm" onclick="speak(window.__lastReport||$('#repout').innerText)">▶ Speak</button></div>
     <div id="repout" style="white-space:pre-wrap;min-height:120px;font-size:13.5px" class="mut">Pick a report. AI drafts land here ready to paste into email.</div></div></div>`;
+async function aiCouncil(taskPrompt){
+  orbThinkSeq("council");
+  try{
+    const d=await AI.call([{role:"user",content:taskPrompt}],{maxTokens:1000});
+    const c=await AI.call([{role:"user",content:"You are an anonymous peer reviewer on a council. You did NOT write the draft. Verify every factual claim strictly against the MATERIAL inside the task below; flag anything unsupported by a record, list concrete corrections and omissions as a short numbered list, check tone (plain prose, no bullets, executive), and end with a one-line verdict. Be blunt.\n\nORIGINAL TASK AND MATERIAL:\n"+taskPrompt+"\n\nDRAFT UNDER REVIEW:\n"+d.text}],{maxTokens:700});
+    const f=await AI.call([{role:"user",content:"You are the council chairman. Output ONLY the final deliverable — no preamble, no mention of the draft or the review. Incorporate every valid correction.\n\nORIGINAL TASK AND MATERIAL:\n"+taskPrompt+"\n\nDRAFT:\n"+d.text+"\n\nANONYMOUS PEER REVIEW:\n"+c.text}],{maxTokens:1000});
+    return {text:f.text,critique:c.text};
+  } finally { orbDone() }
+}
 async function aiReport(kind){
   const out=$("#repout");out.innerHTML='<div class="thinking"><i></i><i></i><i></i></div>';
   const digest=snapshotFor(kind==="weekly"?"week update project risk overdue vendor":"critical risk overdue project invoice compliance",36);
@@ -1480,8 +1565,18 @@ async function aiReport(kind){
     onepager:"Write a one-page leadership summary of the portfolio for senior leadership. Plain prose paragraphs, no bullets, no headers, direct, professional. Cover: overall state, the 3-4 items that matter most, money exposure if relevant, compliance posture, and what you (Antoine) are driving this week.",
     weekly:"Draft the weekly update email from Antoine to Nick Queensland and Tom Watson. Plain prose, no bullets, no hyphens as separators, direct and confident, 150-220 words, subject line first.",
     top5:"List the top 5 issues across all hospitals as five short plain-prose paragraphs, each starting with the hospital code and a colon, ranked by risk. End with one sentence on what to escalate."};
-  try{const r=await AI.call([{role:"user",content:portfolioContext()+"\nLIVE MEMORY:\n"+digest+"\nToday is "+todayISO()+".\n\n"+prompts[kind]}],{maxTokens:1000});
-    out.innerText=r.text;audit("report",null,null,"AI draft: "+kind,"ai");
+  const task=portfolioContext()+"\nLIVE MEMORY (MATERIAL):\n"+digest+"\nToday is "+todayISO()+".\n\n"+prompts[kind];
+  const useCouncil=$("#councilChk")?$("#councilChk").checked:SETTINGS.councilReports;
+  try{
+    let final,critique=null;
+    if(useCouncil){const r=await aiCouncil(task);final=r.text;critique=r.critique}
+    else{const r=await AI.call([{role:"user",content:task}],{maxTokens:1000});final=r.text}
+    window.__lastReport=final;
+    out.innerHTML=(critique?'<div class="flexr" style="margin-bottom:9px"><span class="stat ok">⚖ COUNCIL-REVIEWED</span><button class="btn sm" onclick="const b=$(\'#critbox\');b.style.display=b.style.display===\'none\'?\'block\':\'none\'">Peer review</button></div>':"")+
+      '<div style="white-space:pre-wrap">'+esc(final)+'</div>'+
+      (critique?'<div id="critbox" class="xs mut" style="display:none;margin-top:10px;padding:10px;border:1px dashed var(--stroke2);white-space:pre-wrap">'+esc(critique)+'</div>':"");
+    addRec("report",{title:"AI draft — "+kind,body:final,critique:critique||undefined,council:!!critique,generatedAt:nowISO(),preparedBy:SETTINGS.preparedBy},"ai");
+    audit("report",null,null,"AI draft: "+kind+(critique?" (council-reviewed)":""),"ai");
   }catch(e){out.innerText=e.message}
 }
 function printStatusReport(){
@@ -1715,6 +1810,7 @@ Views.settings=()=>`<div class="view"><div class="pghead"><div class="grow"><div
     <div class="panel"><div class="panelhead"><span class="eyebrow">Identity & Voice</span></div>
       <div class="formrow"><label>Prepared by</label><input value="${esc(SETTINGS.preparedBy)}" onchange="SETTINGS.preparedBy=this.value;saveSettings()"></div>
       <div class="formrow"><label>Voice replies</label><div><label class="sm"><input type="checkbox" ${SETTINGS.voice?"checked":""} onchange="SETTINGS.voice=this.checked;saveSettings()"> Speak briefings & answers</label></div></div>
+      <div class="formrow"><label>Auto-commit</label><div><label class="sm" style="cursor:pointer"><input type="checkbox" ${SETTINGS.autoCommit?"checked":""} onchange="SETTINGS.autoCommit=this.checked;saveSettings()"> Commit ingests automatically when match confidence ≥90% (audit-flagged; everything else still hits the review board)</label></div></div>
       <div class="formrow"><label>Motion</label><select onchange="SETTINGS.motion=this.value;saveSettings();document.body.classList.toggle('no-motion',this.value==='off');render()"><option value="auto" ${SETTINGS.motion!=="off"?"selected":""}>Full motion</option><option value="off" ${SETTINGS.motion==="off"?"selected":""}>Reduced motion</option></select></div>
       <div class="formrow"><label>Voice rate</label><input type="number" step="0.1" min="0.6" max="1.6" value="${SETTINGS.voiceRate}" onchange="SETTINGS.voiceRate=parseFloat(this.value)||1;saveSettings()"></div></div>
     <div class="panel"><div class="panelhead"><span class="eyebrow">Live Integrations (Brain)</span></div>
@@ -1781,7 +1877,9 @@ function renderNav(){
   $("#nav").innerHTML=NAV.map(([sec,items])=>`<div class="navsec">${sec}</div>`+items.map(([n,ic,l])=>{const b=navBadge(n);
     return `<div class="navitem ${ROUTE.name===n?"active":""}" onclick="go('#/${n}')"><span class="ni">${ic}</span>${l}<span class="badge ${b?"":"zero"}">${b}</span></div>`}).join("")).join("");
 }
-function go(hash){if(location.hash===hash)render();else location.hash=hash}
+function toggleNav(){document.body.classList.toggle("navopen")}
+function closeNav(){document.body.classList.remove("navopen")}
+function go(hash){closeNav();if(location.hash===hash)render();else location.hash=hash}
 function parseRoute(){
   const p=(location.hash||"#/dashboard").slice(2).split("/");
   if(p[0]==="e")ROUTE={name:"entity",type:p[1],id:p[2],tab:ROUTE.type===p[1]&&ROUTE.id===p[2]?ROUTE.tab:"overview"};
@@ -1818,7 +1916,7 @@ async function boot(){
   $("#gsearchinput").addEventListener("click",openSearch);
   $("#sinput").addEventListener("input",debounce(renderSearch,120));
   $("#sinput").addEventListener("keydown",e=>{if(e.key==="Enter"){const f=$("#sres .srow");if(f)f.click()}if(e.key==="Escape")closeSearch()});
-  document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();openSearch()}if(e.key==="Escape"){closeSearch();closeModal()}});
+  document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();openSearch()}if(e.key==="Escape"){closeSearch();closeModal();closeNav()}});
   $("#sov").addEventListener("click",e=>{if(e.target.id==="sov")closeSearch()});
   $("#modalveil").addEventListener("click",e=>{if(e.target.id==="modalveil")closeModal()});
   $("#micbtn").onclick=toggleMic;$("#briefbtn").onclick=runBriefing;$("#orb").onclick=toggleMic;

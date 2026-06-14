@@ -313,7 +313,7 @@ const blankDB=()=>({meta:{version:1,created:nowISO(),seeded:false},
   invoices:[],assets:[],risks:[],actions:[],notes:[],deficiencies:[],requirements:[],
   evidence:[],calEvents:[],reports:[],links:[]});
 const defSettings=()=>({voice:true,voiceRate:1.0,mcpSmartsheet:false,mcpMail:false,mcpDrive:false,preparedBy:"Antoine W. Riley Sr., Director of Systems Maintenance",
-  cloudUrl:"",cloudKey:"",cloudEmail:""});
+  cloudUrl:"",cloudKey:"",cloudEmail:"",gatewayPass:""});
 
 const saveDB=debounce(async()=>{await Store.set(DB_KEY,DB)},600);
 const saveAudit=debounce(async()=>{AUDIT=AUDIT.slice(-1200);await Store.set(AUDIT_KEY,AUDIT)},800);
@@ -440,6 +440,34 @@ function migrate(){
     if(p.due===undefined)p.due=p.due||null;
   });
   if(DB.hospitals.length===0){DB.meta.seeded=false;seed();}
+  purgeCompliance();
+  reconcileLinks();
+}
+/* Make the knowledge graph reflect reality: every record that names a hospital in its field gets an
+   explicit link to that hospital, so nothing sits alone. Idempotent — addLink dedupes, so this is a
+   no-op once everything's wired. Covers projects, notes, vendors, people, assets, risks, actions,
+   invoices, emails, documents, calendar events — everything that can belong to a site. */
+function reconcileLinks(){
+  let made=0;const before=DB.links.length;
+  Object.keys(ENT).forEach(t=>{
+    if(t==="hospital")return;const c=DB[col(t)];if(!c)return;
+    c.forEach(r=>{if(r.hospitalId&&rec(r.hospitalId)){
+      const had=DB.links.length;addLink(r.id,r.hospitalId,"reconcile");if(DB.links.length>had)made++;}});
+  });
+  if(DB.links.length!==before){reconcileLinks.lastCount=made;audit("reconcile",null,null,"Linked "+made+" record(s) into the graph");saveDB();}
+  return made;
+}
+/* one-time, idempotent: compliance is gone from this OS — delete every requirement/deficiency/evidence
+   record and any link touching one, for every hospital. Nothing creates these anymore, so after the
+   first load this is a no-op forever, and the wipe survives cloud sync across devices. */
+function purgeCompliance(){
+  const dead=new Set();
+  ["requirements","deficiencies","evidence"].forEach(k=>{(DB[k]||[]).forEach(r=>dead.add(r.id));DB[k]=[]});
+  if(!dead.size)return 0;
+  DB.links=DB.links.filter(l=>!dead.has(linkA(l))&&!dead.has(linkB(l)));
+  audit("purge",null,null,"Removed "+dead.size+" compliance item(s) from memory");saveDB();
+  purgeCompliance.lastCount=dead.size;
+  return dead.size;
 }
 /* ============================ CLOUD SYNC (Supabase · table: universe_store) ============================ */
 const CLOUD={url:"",key:"",email:"",token:"",refresh:"",userId:"",down:false,
@@ -528,14 +556,13 @@ function cloudSignOut(){CLOUD.signOut();Store.env=Store.hasClaude?"claude":"loca
 
 /* ============================ AI GATEWAY (server holds the key) ============================ */
 function aiUnavailableNote(){
-  if(location.protocol==="file:")return"AI runs through the site's gateway — open the deployed address to use the Brain.";
-  if(!CLOUD.signedIn())return"Sign in to Cloud Sync (Settings) first — the AI gateway only answers a valid login.";
+  if(location.protocol==="file:")return"You're viewing the downloaded file directly — the Brain runs on the server. Open your live link (the .vercel.app address) to use it. Cloud Sync isn't required for the AI.";
   return"";
 }
 async function AI(messages,{system="",max=1800}={}){
   const note=aiUnavailableNote();if(note)throw new Error(note);
   const r=await fetch("/api/anthropic",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({access_token:CLOUD.token,model:"claude-sonnet-4-6",max_tokens:max,system,messages})});
+    body:JSON.stringify({access_token:CLOUD.token||"",passcode:SETTINGS.gatewayPass||"",model:"claude-sonnet-4-6",max_tokens:max,system,messages})});
   const j=await r.json().catch(()=>({}));
   if(!r.ok)throw new Error(j.error||("AI gateway "+r.status));
   return ((j.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n")).trim()||"(no response)";
@@ -882,10 +909,12 @@ Views.graph=()=>`<div class="view"><div class="pghead"><div class="grow"><div cl
   <div class="pgsub">${DB.links.length} live connections. Tap a node to inspect; drag to untangle.</div></div>
   <input style="max-width:220px" placeholder="Highlight…" oninput="GRAPH.q=this.value;drawGraph()"></div>
   <div id="gwrap"><svg id="gsvg"></svg><div id="ginfo"></div></div></div>`;
+const GRAPH_HIDE=new Set(["requirement","deficiency","evidence"]); // compliance items never appear on the map
 function graphData(){
   const ids=new Set();DB.links.forEach(l=>{ids.add(linkA(l));ids.add(linkB(l))});
   DB.hospitals.forEach(h=>ids.add(h.id));
   const nodes=[...ids].map(id=>{const r=rec(id);if(!r)return null;const t=typeOf(id);
+    if(GRAPH_HIDE.has(t))return null;
     return {id,t,label:nameOf(r).slice(0,22)}}).filter(Boolean);
   const have=new Set(nodes.map(n=>n.id));
   const links=DB.links.filter(l=>have.has(linkA(l))&&have.has(linkB(l))).map(l=>({source:linkA(l),target:linkB(l)}));
@@ -1106,7 +1135,7 @@ const FORMS={
   vendor:[["name","text"],["contact","text"],["phone","text"],["email","text"]],
   invoice:[["vendorName","text"],["number","text"],["hospitalId","hospital"],["amount","number"],["date","date"],["dueDate","date"],["status",INV_FLOW]],
   calevent:[["title","text"],["hospitalId","hospital"],["date","date"]],
-  note:[["title","text"],["text","textarea"]]
+  note:[["title","text"],["hospitalId","hospital"],["text","textarea"]]
 };
 function formField(k,spec,val){
   const v=val==null?"":val;
@@ -1131,7 +1160,7 @@ function saveQuick(type,id){
     let v=el.value;if(el.type==="number")v=v===""?null:Number(v);data[el.dataset.k]=v===""?null:v});
   if(!data.title&&!data.name&&!data.vendorName){toast("Give it a name","am");return}
   let r;
-  if(id){r=updRec(id,data)}else{r=addRec(type,data);if(data.hospitalId)addLink(r.id,data.hospitalId)}
+  if(id){r=updRec(id,data);if(data.hospitalId)addLink(id,data.hospitalId)}else{r=addRec(type,data);if(data.hospitalId)addLink(r.id,data.hospitalId)}
   closeModal();toast((id?"Updated":"Added")+" "+nameOf(r),"ok");render();
 }
 /* ============================ REPORTS ENGINE ============================ */
@@ -1311,6 +1340,9 @@ Views.settings=()=>`<div class="view"><div class="pghead"><div class="grow"><div
   <div class="panel"><div class="panelhead"><span class="eyebrow">Identity</span></div>
     <label class="f">Prepared by (signs every report)</label>
     <input value="${esc(SETTINGS.preparedBy)}" onchange="SETTINGS.preparedBy=this.value;saveSettings();toast('Saved','ok')">
+    <label class="f" style="margin-top:11px">AI gateway passcode (optional)</label>
+    <input type="password" value="${esc(SETTINGS.gatewayPass||"")}" placeholder="leave blank unless you locked the gateway" onchange="SETTINGS.gatewayPass=this.value;saveSettings();toast('Saved','ok')">
+    <div class="xs mut2" style="margin-top:5px">The Brain works on your live link with no setup. If you want to stop strangers who find the URL from spending your API credits, set <b>GATEWAY_PASSCODE</b> in Vercel to any phrase, then type the same phrase here.</div>
     <div class="xs mut2" style="margin-top:8px">Engine: <b>${Store.env==="cloud"?"Supabase cloud · live sync":Store.env==="claude"?"Claude persistent storage":"browser localStorage"}</b></div></div>
   <div class="panel"><div class="panelhead"><span class="eyebrow">Memory &amp; Backup</span></div>
     <div class="flexr"><button class="btn" onclick="exportJSON()">⇩ Export Full Backup</button>
@@ -1404,6 +1436,8 @@ async function boot(){
   $("#modalveil").addEventListener("click",e=>{if(e.target.id==="modalveil")closeModal()});
   $("#micbtn").onclick=toggleMic;$("#briefbtn").onclick=runBriefing;
   toast("Universe online · "+(Store.env==="cloud"?"cloud sync":Store.env==="claude"?"Claude persistent storage":"local memory"),"ok");
+  if(purgeCompliance.lastCount){toast("Cleared "+purgeCompliance.lastCount+" compliance item(s) from memory","am");purgeCompliance.lastCount=0}
+  if(reconcileLinks.lastCount){toast("Linked "+reconcileLinks.lastCount+" record(s) into the knowledge graph","ok");reconcileLinks.lastCount=0}
 }
 boot();
 </script>

@@ -362,6 +362,14 @@ function delRec(id){
   DB.links=DB.links.filter(l=>linkA(l)!==id&&linkB(l)!==id);
   audit("delete",t,id,"removed");saveDB();
 }
+/* embedded, cloud-synced note log on any record — feeds the Brain snapshot */
+function addNote(id,text){text=(text||"").trim();if(!text)return null;
+  const r=rec(id);if(!r)return null;
+  (r.noteLog=r.noteLog||[]).push({id:uid("n"),at:nowISO(),text});r.updatedAt=nowISO();
+  audit("note",typeOf(id),id,text.slice(0,60));saveDB();return r;}
+function delNote(id,noteId){const r=rec(id);if(!r||!r.noteLog)return;
+  r.noteLog=r.noteLog.filter(n=>n.id!==noteId);r.updatedAt=nowISO();saveDB();}
+function noteCount(r){return (r&&r.noteLog&&r.noteLog.length)||0}
 /* links — defensive read: supports {a,b}, {from,to}, [a,b] */
 const linkA=l=>Array.isArray(l)?l[0]:(l.a||l.from||l.source);
 const linkB=l=>Array.isArray(l)?l[1]:(l.b||l.to||l.target);
@@ -470,10 +478,11 @@ function purgeCompliance(){
   return dead.size;
 }
 /* ============================ CLOUD SYNC (Supabase · table: universe_store) ============================ */
-const CLOUD={url:"",key:"",email:"",token:"",refresh:"",userId:"",down:false,
+const CLOUD={url:"",key:"",email:"",token:"",refresh:"",userId:"",down:false,lastErr:"",lastSync:"",
   configured(){return!!(this.url&&this.key)},
   signedIn(){return!!this.token},
   hdr(){return{"apikey":this.key,"Authorization":"Bearer "+this.token,"Content-Type":"application/json"}},
+  persist(){try{localStorage.setItem("wuos:sess",JSON.stringify({t:this.token,r:this.refresh,e:this.email,u:this.userId,url:this.url,key:this.key}))}catch(e){}},
   async signIn(email,password){
     const r=await fetch(this.url.replace(/\/$/,"")+"/auth/v1/token?grant_type=password",{
       method:"POST",headers:{"apikey":this.key,"Content-Type":"application/json"},
@@ -481,17 +490,15 @@ const CLOUD={url:"",key:"",email:"",token:"",refresh:"",userId:"",down:false,
     const j=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(j.error_description||j.msg||j.message||"Sign-in failed — check email/password (create the user in Supabase → Authentication → Users).");
     this.token=j.access_token;this.refresh=j.refresh_token;this.email=email;this.userId=(j.user&&j.user.id)||"";
-    sessionStorage.setItem("wuos:sess",JSON.stringify({t:this.token,r:this.refresh,e:email,u:this.userId}));
-    return true;
+    this.persist();return true;
   },
   async refreshToken(){
     if(!this.refresh)return false;
     try{const r=await fetch(this.url.replace(/\/$/,"")+"/auth/v1/token?grant_type=refresh_token",{
       method:"POST",headers:{"apikey":this.key,"Content-Type":"application/json"},
       body:JSON.stringify({refresh_token:this.refresh})});
-      const j=await r.json();if(!r.ok)return false;
-      this.token=j.access_token;this.refresh=j.refresh_token||this.refresh;
-      sessionStorage.setItem("wuos:sess",JSON.stringify({t:this.token,r:this.refresh,e:this.email,u:this.userId}));
+      const j=await r.json().catch(()=>({}));if(!r.ok)return false;
+      this.token=j.access_token;this.refresh=j.refresh_token||this.refresh;this.persist();
       return true;
     }catch(e){return false}
   },
@@ -504,19 +511,37 @@ const CLOUD={url:"",key:"",email:"",token:"",refresh:"",userId:"",down:false,
       headers:Object.assign(this.hdr(),{"Prefer":"resolution=merge-duplicates,return=minimal"}),
       body:JSON.stringify([{key,data:val,updated_at:nowISO()}])});
     else if(method==="DEL")r=await fetch(base+"?key=eq."+encodeURIComponent(key),{method:"DELETE",headers:this.hdr()});
-    if(r.status===401&&!retried&&await this.refreshToken())return this.kv(method,key,val,true);
+    if((r.status===401||r.status===403)&&!retried&&await this.refreshToken())return this.kv(method,key,val,true);
     if(!r.ok){const t=await r.text().catch(()=>"");
-      if(r.status===404||/universe_store/.test(t)&&/not exist|relation/.test(t))throw new Error("Cloud table missing. Run the setup SQL in Supabase, then Connect again.");
-      throw new Error("Cloud "+r.status+": "+t.slice(0,140));}
+      this.lastErr=r.status+" "+t.slice(0,160);
+      if(r.status===404||(/universe_store/.test(t)&&/not exist|relation/.test(t)))throw new Error("Cloud table missing. Run the setup SQL in Supabase (Settings → setup SQL), then Connect again.");
+      if(r.status===401||r.status===403)throw new Error("Login expired and couldn't refresh — open Settings → Cloud Sync and Connect again.");
+      throw new Error("Cloud "+r.status+": "+(t.slice(0,140)||"write rejected"));}
+    this.lastErr="";this.lastSync=nowISO();
     if(method==="GET"){const j=await r.json();return j&&j[0]?j[0].data:null}
     return true;
   },
-  signOut(){this.token="";this.refresh="";this.userId="";sessionStorage.removeItem("wuos:sess")}
+  async test(){
+    // live write + read-back roundtrip; returns a plain-English result
+    const probe={ping:nowISO(),by:this.email};
+    await this.kv("SET","wuos:probe",probe);
+    const got=await this.kv("GET","wuos:probe");
+    if(!got||got.ping!==probe.ping)throw new Error("Wrote, but read back nothing — check the table's RLS policies (re-run the setup SQL).");
+    return "Write + read-back OK as "+this.email;
+  },
+  signOut(){this.token="";this.refresh="";this.userId="";try{localStorage.removeItem("wuos:sess")}catch(e){}}
 };
 function cloudChip(){const c=$("#cloudchip");if(!c)return;
-  if(Store.env==="cloud"&&CLOUD.down){c.textContent="CLOUD · RETRYING";c.className="warn";return}
-  if(Store.env==="cloud"){c.textContent="CLOUD SYNC";c.className="on";return}
+  if(Store.env==="cloud"&&CLOUD.down){c.textContent="CLOUD · RETRYING";c.className="warn";c.title=CLOUD.lastErr||"";return}
+  if(Store.env==="cloud"){c.textContent="CLOUD SYNC";c.className="on";c.title=CLOUD.lastSync?"Last sync "+fmtDT(CLOUD.lastSync):"";return}
   c.textContent=Store.hasClaude?"CLAUDE STORE":"LOCAL";c.className="";
+}
+async function testCloud(){
+  if(!CLOUD.configured()){toast("Enter the Cloud Sync values and Connect first","am");return}
+  if(!CLOUD.signedIn()){toast("Connect & Sign In first","am");return}
+  toast("Testing cloud roundtrip…");
+  try{const msg=await CLOUD.test();CLOUD.down=false;cloudChip();toast("✓ "+msg,"ok");render();}
+  catch(e){CLOUD.down=true;cloudChip();toast("✗ "+e.message,"err");render();}
 }
 async function cloudConnect(){
   const url=$("#cl_url").value.trim(),key=$("#cl_key").value.trim(),email=$("#cl_email").value.trim(),pw=$("#cl_pw").value;
@@ -571,7 +596,7 @@ function portfolioContext(){
   return "You are the Brain of Work Universe OS — the operations command center for "+SETTINGS.preparedBy+
   ", who directs systems maintenance across the ten-hospital MedStar portfolio: "+
   DB.hospitals.map(h=>h.code+" ("+h.name+")").join(", ")+
-  ". Answer plainly and operationally. Cite record names. Never invent data not present in the snapshot.";
+  ". Answer in clean, plain operational language — short paragraphs and simple dashes when you list things, NOT big markdown tables, headers, or blockquotes unless the user explicitly asks for a table. Be direct and tight, like a sharp ops chief briefing the director. Read the EMAIL INTEL and any NOTES in the snapshot as primary signal about what's really going on. Cite record names. Never invent data not present in the snapshot.";
 }
 
 /* ============================ LOCAL SEARCH & BRAIN SNAPSHOT ============================ */
@@ -597,11 +622,18 @@ function snapshotFor(query,max=34){
   const seen=new Set(),rows=[];
   for(const r of [...base,...extra]){if(seen.has(r.id))continue;seen.add(r.id);
     const t=typeOf(r.id),h=hospOf(r.id);
+    const notes=(r.noteLog||[]).slice(-4).map(n=>"("+fmtD(n.at)+") "+n.text).join(" || ");
     rows.push("["+r.id+"] "+(ENT[t]?ENT[t].label:t)+" | "+(h?h.code+" | ":"")+
-      [nameOf(r),r.status,r.phase,r.category,r.severity,r.owner&&("owner:"+r.owner),r.due&&("due:"+r.due),r.dueDate&&("due:"+r.dueDate),r.amount!=null&&fmt$(r.amount),r.vendorName,(r.summary||r.body||r.text||"").slice(0,180)].filter(Boolean).join(" | "));
+      [nameOf(r),r.status,r.phase,r.category,r.severity,r.owner&&("owner:"+r.owner),r.due&&("due:"+r.due),r.dueDate&&("due:"+r.dueDate),r.amount!=null&&fmt$(r.amount),r.vendorName,(r.summary||r.body||r.text||"").slice(0,180),notes&&("NOTES: "+notes)].filter(Boolean).join(" | "));
     if(rows.length>=max+12)break;
   }
-  return rows.join("\n");
+  let out=rows.join("\n");
+  // EMAIL INTEL — every email on file, so the Brain always has the full picture
+  const emails=DB.emails.slice().sort((a,b)=>(b.urgency||0)-(a.urgency||0)).slice(0,40).map(e=>{const h=hospOf(e.id);
+    const notes=(e.noteLog||[]).slice(-2).map(n=>n.text).join(" || ");
+    return "["+e.id+"] "+(h?h.code+" | ":"")+"urgency "+(e.urgency||1)+" | "+(e.subject||"(no subject)")+" — "+((e.summary||e.body||"").slice(0,220))+(notes?" | NOTES: "+notes:"");});
+  if(emails.length)out+="\n\n--- EMAIL INTEL ("+DB.emails.length+" on file) ---\n"+emails.join("\n");
+  return out;
 }
 
 /* ============================ BRAIN & BRIEFING ============================ */
@@ -670,12 +702,28 @@ const EXTRACT_SPEC=`Return ONLY JSON, no markdown:
 "urgency":1-5}`;
 function procLog(line,cls=""){const el=$("#proclog");if(!el)return;el.insertAdjacentHTML("beforeend",`<div class="${cls}">${esc(line)}</div>`);el.scrollTop=el.scrollHeight}
 function showProc(name){$("#procbox").innerHTML=`<div class="procwrap"><div class="scanline"></div><div class="proclog" id="proclog"></div></div>`;procLog("▶ INGEST PROTOCOL :: "+name,"am")}
+function parseAIJSON(raw){
+  if(!raw)return null;
+  let s=String(raw).replace(/```json|```/g,"").trim();
+  const ob=s.indexOf("{"),oa=s.indexOf("[");
+  let start=-1,close="}";
+  if(oa>=0&&(ob<0||oa<ob)){start=oa;close="]"}else if(ob>=0){start=ob;close="}"}
+  if(start<0)return null;
+  const end=s.lastIndexOf(close);if(end<=start)return null;
+  s=s.slice(start,end+1);
+  try{return JSON.parse(s)}catch(e){
+    try{return JSON.parse(s.replace(/,\s*([}\]])/g,"$1"))}catch(e2){return null}
+  }
+}
 async function extractFromContent(blocks,filename){
   const sys=portfolioContext()+"\nYou extract structured operations intelligence from raw inputs (files, emails, notes) for a hospital facilities portfolio. Map hospital references to codes. Use synonyms: "+JSON.stringify(HOSP_SYN)+". Never invent data not present.\n"+EXTRACT_SPEC.replace("__PCATS__",PROJ_CATS.join("|"));
-  const raw=await AI([{role:"user",content:blocks}],{system:sys,max:1800});
-  const clean=raw.replace(/```json|```/g,"").trim();
-  const start=clean.indexOf("{");const end=clean.lastIndexOf("}");
-  return JSON.parse(clean.slice(start,end+1));
+  let obj=parseAIJSON(await AI([{role:"user",content:blocks}],{system:sys,max:1800}));
+  if(!obj){
+    const txt=blocks.map(b=>b.text||"[non-text content]").join("\n").slice(0,12000);
+    obj=parseAIJSON(await AI([{role:"user",content:[{type:"text",text:"Return ONLY one valid JSON object, no prose, matching this shape:\n"+EXTRACT_SPEC.replace("__PCATS__",PROJ_CATS.join("|"))+"\n\nINPUT:\n"+txt}]}],{system:sys,max:1800}));
+  }
+  if(!obj)throw new Error("Couldn't structure this one automatically. Paste the email body into the box as text, or bring it in and use the AI Actions on it afterward.");
+  return obj;
 }
 function findHospByCode(code){if(!code)return null;return DB.hospitals.find(h=>h.code.toUpperCase()===String(code).toUpperCase())||null}
 function ensureByName(type,name,extra={}){
@@ -731,17 +779,35 @@ async function runExtraction(blocks,raw,filename,sourceKind){
     if(!ex.hospital)toast("Couldn't place a hospital — open the record and link one.","am");
   }catch(e){procLog("✗ "+e.message,"err");toast(e.message,"err")}
 }
+function salvageStrings(buf){
+  const b=new Uint8Array(buf),out=[];
+  for(const off of [0,1]){
+    let u="";for(let i=off;i+1<b.length;i+=2){const c=b[i],n=b[i+1];
+      if(n===0&&c>=32&&c<127)u+=String.fromCharCode(c);else{if(u.length>=4)out.push(u);u=""}}
+    if(u.length>=4)out.push(u);
+  }
+  let a="";for(let i=0;i<b.length;i++){const c=b[i];if(c>=32&&c<127)a+=String.fromCharCode(c);else{if(a.length>=6)out.push(a);a=""}}
+  if(a.length>=6)out.push(a);
+  const seen=new Set(),keep=[];
+  for(const s of out){const k=s.trim();if(k.length<4||seen.has(k))continue;seen.add(k);keep.push(k)}
+  return keep.join("\n");
+}
 function fileToBlocks(file){
   return new Promise((res,rej)=>{
     const isImg=/^image\//.test(file.type),isPdf=file.type==="application/pdf";
+    const isBinaryDoc=/\.(msg|doc|xls|ppt)$/i.test(file.name)&&!/\.(docx|xlsx|pptx)$/i.test(file.name);
     const fr=new FileReader();
     fr.onerror=()=>rej(new Error("Read failed"));
     if(isImg||isPdf){fr.onload=()=>{const b64=String(fr.result).split(",")[1];
       res({blocks:[isPdf?{type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}}:{type:"image",source:{type:"base64",media_type:file.type,data:b64}},{type:"text",text:"Extract operations intelligence from this "+(isPdf?"PDF":"photo")+" named "+file.name}],raw:{b64,media:file.type}})};
-      fr.readAsDataURL(file)}
-    else{fr.onload=()=>{const t=String(fr.result).slice(0,14000);
+      fr.readAsDataURL(file);return}
+    if(isBinaryDoc){fr.onload=()=>{const text=salvageStrings(fr.result);
+      if(text.trim().length<25){rej(new Error("Couldn't read text out of "+file.name+". In Outlook open the email and Save As → .txt or .eml, or just paste the body into the box below."));return}
+      res({blocks:[{type:"text",text:"OUTLOOK/OFFICE FILE ("+file.name+") — recovered text:\n\n"+text.slice(0,14000)}],raw:{text}})};
+      fr.readAsArrayBuffer(file);return}
+    fr.onload=()=>{const t=String(fr.result).slice(0,14000);
       res({blocks:[{type:"text",text:"FILE: "+file.name+"\n\n"+t}],raw:{text:String(fr.result)}})};
-      fr.readAsText(file)}
+    fr.readAsText(file);
   });
 }
 async function ingestFiles(files){
@@ -767,6 +833,7 @@ Views.dashboard=()=>{
     <div class="pghead"><div class="grow"><div class="eyebrow am">Portfolio Command</div><h1 class="pg">Work Universe</h1>
     <div class="pgsub">${DB.hospitals.length} sites · ${oP.length} open projects · ${DB.links.length} connections in memory</div></div>
     <button class="btn" onclick="go('#/ingest')">＋ Ingest Data</button><button class="btn primary" onclick="go('#/brain')">Ask the Brain</button></div>
+    ${commandReadPanel()}
     <div id="pulse">${DB.hospitals.map(h=>{const s=hospSeverity(h);return `<div class="pseg s-${s}" onclick="go('#/e/hospital/${h.id}')"><div class="pc"><span class="led ${s==='ok'?'ok':s}"></span>${esc(h.code)}</div><div class="pn">${esc(h.name)}</div></div>`}).join("")}</div>
     <div class="grid g4" style="margin-bottom:16px">
       <div class="metric info" onclick="go('#/projects')"><div class="eyebrow">Open Projects</div><div class="mv">${oP.length}</div><div class="ml">${DB.projects.length} total tracked</div></div>
@@ -801,6 +868,7 @@ Views.projects=()=>{
   return `<div class="view"><div class="pghead"><div class="grow"><div class="eyebrow am">Project Intelligence</div><h1 class="pg">Projects</h1>
   <div class="pgsub">${oP.length} open · ${odP.length} overdue · ${DB.projects.length} in memory</div></div>
   <button class="btn" onclick="go('#/matrix')">◫ Matrix</button><button class="btn" onclick="go('#/radar')">✹ Radar</button></div>
+  ${dupeBanner()}
   ${stuck.length?`<div class="panel tight" style="margin-bottom:14px;border-color:rgba(232,163,61,.3)"><div class="panelhead"><span class="eyebrow am">Stalled / On Hold</span></div><div class="pillrow">${stuck.map(p=>{const h=hospOf(p.id);return `<span class="chip" onclick="go('#/e/project/${p.id}')">⏸ ${h?esc(h.code)+" · ":""}${esc(p.title).slice(0,34)}</span>`}).join("")}</div></div>`:""}
   ${projTable(DB.projects)}</div>`;
 };
@@ -911,13 +979,23 @@ Views.graph=()=>`<div class="view"><div class="pghead"><div class="grow"><div cl
   <div id="gwrap"><svg id="gsvg"></svg><div id="ginfo"></div></div></div>`;
 const GRAPH_HIDE=new Set(["requirement","deficiency","evidence"]); // compliance items never appear on the map
 function graphData(){
-  const ids=new Set();DB.links.forEach(l=>{ids.add(linkA(l));ids.add(linkB(l))});
+  const ids=new Set();
   DB.hospitals.forEach(h=>ids.add(h.id));
+  DB.links.forEach(l=>{ids.add(linkA(l));ids.add(linkB(l))});
+  // pull in every record that names a hospital, so the graph reflects all data — projects, emails, invoices, risks, vendors…
+  const hospEdges=[];
+  Object.keys(ENT).forEach(t=>{
+    if(t==="hospital"||GRAPH_HIDE.has(t))return;const c=DB[col(t)];if(!c)return;
+    c.forEach(r=>{if(r.hospitalId&&rec(r.hospitalId)){ids.add(r.id);hospEdges.push([r.id,r.hospitalId])}});
+  });
   const nodes=[...ids].map(id=>{const r=rec(id);if(!r)return null;const t=typeOf(id);
     if(GRAPH_HIDE.has(t))return null;
     return {id,t,label:nameOf(r).slice(0,22)}}).filter(Boolean);
   const have=new Set(nodes.map(n=>n.id));
-  const links=DB.links.filter(l=>have.has(linkA(l))&&have.has(linkB(l))).map(l=>({source:linkA(l),target:linkB(l)}));
+  const seen=new Set(),links=[];
+  const push=(a,b)=>{if(!have.has(a)||!have.has(b)||a===b)return;const k=a<b?a+"|"+b:b+"|"+a;if(seen.has(k))return;seen.add(k);links.push({source:a,target:b})};
+  DB.links.forEach(l=>push(linkA(l),linkB(l)));
+  hospEdges.forEach(([a,b])=>push(a,b));
   return{nodes,links};
 }
 function drawGraph(){
@@ -1054,7 +1132,8 @@ function hospitalTabs(h){
   if(tab==="emails")body=`<div class="panel">${byHosp(DB.emails,h.id).map(e=>`<div class="rowlink" style="padding:6px 0;border-bottom:1px solid var(--stroke)" onclick="go('#/e/email/${e.id}')">✉ <b>${esc(e.subject||"—").slice(0,60)}</b><div class="xs mut">${esc((e.summary||"").slice(0,100))}</div></div>`).join("")||'<div class="empty">No emails yet.</div>'}</div>`;
   if(tab==="timeline"){const tl=AUDIT.filter(e=>{const r=e.entityId&&rec(e.entityId);return r&&(r.hospitalId===h.id||e.entityId===h.id)}).slice(-20).reverse();
     body=`<div class="panel"><div class="tline">${tl.map(e=>`<div class="tev ${e.src==='ai'?'am':''}"><div class="td">${fmtDT(e.at)}</div><div class="sm">${esc(e.action)} ${esc(e.entityType||"")} — ${esc((e.summary||"").slice(0,80))}</div></div>`).join("")||'<div class="empty">No activity yet.</div>'}</div></div>`;}
-  return `<div class="tabs">${T("overview","Overview")+T("projects","Projects")+T("invoices","Invoices")+T("docs","Documents")+T("emails","Emails")+T("timeline","Timeline")}</div>${body}`;
+  if(tab==="notes")body=aiActionsPanel(h.id)+notesPanel(h.id);
+  return `<div class="tabs">${T("overview","Overview")+T("projects","Projects")+T("invoices","Invoices")+T("docs","Documents")+T("emails","Emails")+T("notes","Notes"+(noteCount(h)?" ("+noteCount(h)+")":""))+T("timeline","Timeline")}</div>${body}`;
 }
 function invoiceDetail(i){
   return `<div class="panel tight"><div class="panelhead"><span class="eyebrow am">Invoice Detail</span></div>
@@ -1076,6 +1155,50 @@ function projectDetail(p){
   <div><div class="eyebrow">Due</div><div class="mono sm" style="${projOverdue(p)?'color:var(--crit)':''}">${fmtD(p.due)}</div></div>
   <div><div class="eyebrow">Owner</div><div class="sm">${esc(p.owner||"—")}</div></div></div></div>`;
 }
+/* ---------- Notes & Updates (any record · synced · feeds the Brain) ---------- */
+function notesPanel(id){
+  const r=rec(id);if(!r)return"";const log=(r.noteLog||[]).slice().reverse();
+  return `<div class="panel"><div class="panelhead"><span class="eyebrow am">Notes &amp; Updates</span><span class="xs mut2 right">${log.length} note${log.length===1?"":"s"} · synced · the Brain reads these</span></div>
+    <textarea id="noteinput_${id}" rows="2" placeholder="Log an update, a decision, a call recap… it syncs everywhere and the AI reads it."></textarea>
+    <div class="flexr" style="margin:8px 0 4px"><button class="btn primary" onclick="submitNote('${id}')">＋ Add Note</button></div>
+    ${log.map(n=>`<div style="padding:7px 0;border-bottom:1px solid var(--stroke)"><div class="xs mut2 mono">${fmtDT(n.at)}</div><div class="sm" style="white-space:pre-wrap;margin:2px 0 4px">${esc(n.text)}</div><button class="btn sm" onclick="if(confirm('Remove this note?')){delNote('${id}','${n.id}');render()}">remove</button></div>`).join("")||'<div class="empty">No notes yet — your manual updates land here and feed the AI brain.</div>'}</div>`;
+}
+function submitNote(id){const el=$("#noteinput_"+id);if(!el)return;
+  if(!addNote(id,el.value)){toast("Type a note first","am");return}
+  toast("Note added &amp; synced","ok");render();}
+
+/* ---------- AI Actions (email / project / risk) ---------- */
+const ITEM_ACTIONS=[
+  ["summarize","Summarize","Summarize this in 4-6 tight sentences: who/what it's about, what's being asked or what's at stake, and any deadline or dollar figure."],
+  ["intent","Investigate Intent","Read between the lines. What is the sender or situation really driving at, what's the subtext or pressure, what risk is implied, and what's the likely next move?"],
+  ["reply","Draft Reply","Draft a professional, concise reply for the director to send. Acknowledge the sender, give a clear position or next step, courteous but firm. Plain text, ready to paste."],
+  ["escalate","Escalate","Draft a tight escalation summary for leadership: the issue, the exposure (operational and financial), who owns it, and the specific decision or support needed."],
+  ["extract","Extract Data","Pull every concrete data point — names, vendors, dollar amounts, dates, equipment/assets, locations, PO and invoice numbers — grouped under simple labels."],
+  ["todo","To-Do List","Turn this into a concrete to-do list. One action per line, with the owner and due date wherever they're stated or clearly implied."],
+  ["next","Next Steps","Lay out the recommended next steps in order, most urgent first, each a single clear line."]];
+let LAST_AI=null;
+function aiActionsPanel(id){
+  return `<div class="panel"><div class="panelhead"><span class="eyebrow am">AI Actions</span><span class="xs mut2 right">results save into Notes</span></div>
+    <div class="flexr">${ITEM_ACTIONS.map(a=>`<button class="btn sm" onclick="runItemAction('${id}','${a[0]}')">${a[1]}</button>`).join("")}</div></div>`;
+}
+async function runItemAction(id,key){
+  const r=rec(id);if(!r)return;const spec=ITEM_ACTIONS.find(a=>a[0]===key);if(!spec)return;
+  const note=aiUnavailableNote();if(note){toast(note,"am");return}
+  openModal(`<div class="eyebrow am" style="margin-bottom:8px">${spec[1]} — ${esc(nameOf(r)).slice(0,46)}</div><div id="aiout" class="sm"><span class="orb think" style="display:inline-block"></span> working…</div>`);
+  const h=hospOf(id);
+  const content=[(h?"Hospital: "+h.code+" — "+h.name:""),"Record: "+nameOf(r),r.summary&&("Summary: "+r.summary),r.body&&("Body:\n"+r.body),r.text&&("Text:\n"+r.text),
+    (r.noteLog||[]).length&&("Notes:\n"+r.noteLog.map(n=>"- "+n.text).join("\n"))].filter(Boolean).join("\n\n").slice(0,9000);
+  try{
+    const out=await AI([{role:"user",content:spec[2]+"\n\n--- RECORD ---\n"+content}],{system:portfolioContext(),max:1300});
+    LAST_AI={id,label:spec[1],text:out};
+    const box=$("#aiout");if(box)box.innerHTML=`<div style="white-space:pre-wrap">${esc(out)}</div>
+      <div class="flexr" style="margin-top:12px"><button class="btn primary" onclick="saveAINote()">＋ Save as Note</button>
+      <button class="btn" onclick="copyAI()">Copy</button></div>`;
+  }catch(e){const box=$("#aiout");if(box)box.innerHTML='<span style="color:var(--crit)">⚠ '+esc(e.message)+'</span>'}
+}
+function saveAINote(){if(!LAST_AI)return;addNote(LAST_AI.id,LAST_AI.label+":\n"+LAST_AI.text);toast("Saved into Notes &amp; synced","ok");closeModal();render();}
+function copyAI(){if(!LAST_AI)return;navigator.clipboard&&navigator.clipboard.writeText(LAST_AI.text).then(()=>toast("Copied","ok"),()=>toast("Copy failed","am"))}
+
 Views.entity=(type,id)=>{
   const r=rec(id);if(!r)return `<div class="view"><div class="empty">Record not found.</div></div>`;
   const h=hospOf(id),lk=linked(id);
@@ -1089,6 +1212,8 @@ Views.entity=(type,id)=>{
     ${FORMS[type]?`<button class="btn" onclick="editRec('${id}')">✎ Edit</button>`:""}
     ${type!=="hospital"?`<button class="btn danger" onclick="if(confirm('Delete this ${type} from memory?')){delRec('${id}');go('#/${col(type)==='calEvents'?'calendar':col(type)}')}">Delete</button>`:""}</div>
   ${special}
+  ${["email","project","risk"].includes(type)?aiActionsPanel(id):""}
+  ${["project","risk","invoice","email"].includes(type)?notesPanel(id):""}
   ${type!=="hospital"?`<div class="grid g2">
     <div class="panel tight"><div class="panelhead"><span class="eyebrow am">Details</span></div>
       ${fields.map(([k,v])=>`<div class="xs" style="padding:3px 0"><span class="mut2" style="text-transform:capitalize">${esc(k)}:</span> ${esc(String(v)).slice(0,80)}</div>`).join("")||'<div class="empty">No extra fields.</div>'}</div>
@@ -1331,9 +1456,11 @@ Views.settings=()=>`<div class="view"><div class="pghead"><div class="grow"><div
     </div>
     <div class="flexr" style="margin-top:11px">
       <button class="btn primary" onclick="cloudConnect()">Connect &amp; Sign In</button>
+      <button class="btn" onclick="testCloud()" ${Store.env==="cloud"?"":"disabled"}>Test Cloud Sync</button>
       <button class="btn" onclick="cloudPush()" ${Store.env==="cloud"?"":"disabled"}>Push to Cloud</button>
       <button class="btn" onclick="cloudPull()" ${Store.env==="cloud"?"":"disabled"}>Pull Latest</button>
       <button class="btn" onclick="cloudSignOut()" ${CLOUD.signedIn()?"":"disabled"}>Sign Out</button></div>
+    ${Store.env==="cloud"?`<div class="xs" style="margin-top:8px">${CLOUD.down?'<span style="color:var(--crit)">⚠ Sync failing — last error: '+esc(CLOUD.lastErr||"unknown")+'</span>':'<span style="color:var(--ok)">● Live</span>'+(CLOUD.lastSync?' · last sync '+fmtDT(CLOUD.lastSync):"")}</div>`:""}
     <div class="xs mut2" style="margin-top:8px">Every save writes to this device first, then the cloud — an outage never loses work. Same four values on each device, one time each.</div>
     <details style="margin-top:9px"><summary class="xs mut" style="cursor:pointer">One-time Supabase setup SQL (if the table doesn't exist yet)</summary>
     <textarea rows="7" readonly onclick="this.select()" style="margin-top:7px;font-family:var(--mono);font-size:11px">${esc(CLOUD_SQL)}</textarea></details></div>
@@ -1351,6 +1478,231 @@ Views.settings=()=>`<div class="view"><div class="pghead"><div class="grow"><div
     <button class="btn danger" onclick="if(confirm('Wipe everything and reseed the ten hospitals? Export a backup first.'))resetAll()">Reset Universe</button></div></div>
   <div class="panel"><div class="panelhead"><span class="eyebrow">Audit Log</span></div><div id="auditlog" style="max-height:300px;overflow-y:auto"></div></div>
   </div>`;
+/* ============================ PORTFOLIO EVALUATION ============================ */
+function scoreGrade(s){return s>=90?"A":s>=80?"B":s>=70?"C":s>=60?"D":"F"}
+function gradeClass(s){return s>=80?"ok":s>=65?"warn":"crit"}
+function hospScore(h){
+  let s=100;const reasons=[];
+  const ps=byHosp(openProjects(),h.id);
+  const od=ps.filter(projOverdue);if(od.length){s-=od.length*8;reasons.push(od.length+" overdue project"+(od.length>1?"s":""))}
+  const stuck=ps.filter(p=>p.status==="Stuck — Vendor");if(stuck.length){s-=stuck.length*6;reasons.push(stuck.length+" stuck on a vendor")}
+  const crit=byHosp(DB.risks,h.id).filter(r=>r.status==="Open"&&r.severity==="critical");if(crit.length){s-=crit.length*12;reasons.push(crit.length+" critical risk"+(crit.length>1?"s":""))}
+  const high=byHosp(DB.risks,h.id).filter(r=>r.status==="Open"&&r.severity==="high");if(high.length){s-=high.length*5;reasons.push(high.length+" high risk"+(high.length>1?"s":""))}
+  const odI=byHosp(openInvs(),h.id).filter(i=>isPast(i.dueDate));if(odI.length){s-=odI.length*4;reasons.push(odI.length+" past-due invoice"+(odI.length>1?"s":""))}
+  const odA=byHosp(DB.actions,h.id).filter(a=>a.status==="Open"&&isPast(a.due));if(odA.length){s-=odA.length*3;reasons.push(odA.length+" overdue action"+(odA.length>1?"s":""))}
+  const hot=byHosp(DB.emails,h.id).filter(e=>(e.urgency||0)>=4&&!noteCount(e));if(hot.length){s-=hot.length*4;reasons.push(hot.length+" urgent email"+(hot.length>1?"s":"")+" with no reply logged")}
+  s=Math.max(0,Math.min(100,Math.round(s)));
+  return {score:s,grade:scoreGrade(s),reasons};
+}
+function portfolioScore(){const a=DB.hospitals.map(h=>hospScore(h).score);return a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length):100}
+function scorecardText(){
+  return DB.hospitals.map(h=>{const e=hospScore(h);return h.code+" ("+h.name+"): "+e.score+"/100 grade "+e.grade+(e.reasons.length?" — "+e.reasons.join(", "):" — clean")}).join("\n");
+}
+let EVAL_AI="";
+Views.evaluate=()=>{
+  const rows=DB.hospitals.map(h=>Object.assign({h},hospScore(h))).sort((a,b)=>a.score-b.score);
+  const ps=portfolioScore(),pg=scoreGrade(ps),C=2*Math.PI*40;
+  return `<div class="view"><div class="pghead"><div class="grow"><div class="eyebrow am">System Evaluation</div><h1 class="pg">Portfolio Health</h1>
+  <div class="pgsub">Every site scored from live signals — overdue projects, critical risks, past-due invoices, overdue actions, and urgent emails with no reply logged. Ranked worst-first so your attention goes where it counts.</div></div>
+  <button class="btn primary" onclick="runEvalAI()">⚡ Evaluate All (AI)</button></div>
+  ${dupeBanner()}
+  ${portfolioTrendPanel()}
+  <div class="panel"><div class="ringwrap"><div class="ring"><svg width="128" height="128"><circle cx="64" cy="64" r="40" fill="none" stroke="#16213c" stroke-width="11"/>
+    <circle cx="64" cy="64" r="40" fill="none" stroke="${ps>=80?"var(--ok)":ps>=65?"var(--amber)":"var(--crit)"}" stroke-width="11" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C*(1-ps/100)}" transform="rotate(-90 64 64)"/></svg>
+    <div class="ringv"><b>${pg}</b><span>portfolio</span></div></div>
+    <div class="grow"><div class="eyebrow">Portfolio Score</div><div class="mv mono" style="font-size:30px;color:${ps>=80?"var(--ok)":ps>=65?"var(--amber2)":"var(--crit)"}">${ps}<span style="font-size:15px;color:var(--mut2)"> / 100</span></div>
+    <div class="xs mut2">${rows.filter(r=>r.score<65).length} site(s) in the red · ${rows.filter(r=>r.score>=80).length} solid</div></div></div></div>
+  ${EVAL_AI?`<div class="panel rail-a"><div class="panelhead"><span class="eyebrow am">Executive Read</span><button class="btn sm right" onclick="EVAL_AI='';render()">clear</button></div><div class="sm" style="white-space:pre-wrap">${esc(EVAL_AI)}</div></div>`:""}
+  <div class="panel"><div class="tblwrap"><table class="tbl"><thead><tr><th>#</th><th>Hospital</th><th>Score</th><th>Grade</th><th>What's dragging it</th><th></th></tr></thead><tbody>
+  ${rows.map((r,i)=>`<tr class="rowlink" onclick="go('#/matrix/${r.h.id}')"><td class="mono mut2">${i+1}</td><td><b>${esc(r.h.code)}</b>${trendArrow(r.h.code)} <span class="xs mut2">${esc(r.h.name)}</span></td>
+    <td class="mono" style="color:var(--${gradeClass(r.score)}==='crit'?'crit':'txt')">${r.score}</td><td><span class="stat s-${gradeClass(r.score)}">${r.grade}</span></td>
+    <td class="xs mut">${r.reasons.length?esc(r.reasons.join(" · ")):"<span style='color:var(--ok)'>clean</span>"}</td>
+    <td class="xs mut2">war room →</td></tr>`).join("")}</tbody></table></div></div></div>`;
+};
+async function runEvalAI(){
+  const note=aiUnavailableNote();if(note){toast(note,"am");return}
+  EVAL_AI="Thinking through all ten sites…";render();
+  try{EVAL_AI=await AI([{role:"user",content:"Here is the live portfolio scorecard for all ten hospitals. Give the director a tight executive read: which sites are solid, which are slipping and exactly why, and where to spend attention this week. Plain language, short paragraphs, no tables.\n\n"+scorecardText()}],{system:portfolioContext(),max:1500});
+    audit("evaluate",null,null,"Ran portfolio evaluation","ai");
+  }catch(e){EVAL_AI="⚠ "+e.message}
+  render();
+}
+
+/* ============================ EMAIL TRIAGE ============================ */
+const TRIAGE_LANES=[["Decision","Needs Your Decision","crit"],["Reply","Needs a Reply","warn"],["Waiting","Waiting on Someone","info"],["FYI","FYI","dim"]];
+Views.triage=()=>{
+  const untri=DB.emails.filter(e=>!e.triage).length;
+  const byLane={};TRIAGE_LANES.forEach(([k])=>byLane[k]=[]);
+  DB.emails.forEach(e=>{const lane=(e.triage&&e.triage.lane)||"FYI";(byLane[lane]=byLane[lane]||[]).push(e)});
+  return `<div class="view"><div class="pghead"><div class="grow"><div class="eyebrow am">Inbox Triage</div><h1 class="pg">Email Triage</h1>
+  <div class="pgsub">${DB.emails.length} email(s) on file · ${untri} not yet triaged. The Brain sorts every message into lanes, tells you what each one wants, and suggests the next move.</div></div>
+  <button class="btn" onclick="syncInbox()">⇩ Sync Inbox</button><button class="btn" onclick="go('#/ingest')">＋ Ingest</button><button class="btn primary" onclick="triageInbox()">⚡ Triage Inbox${untri?" ("+untri+")":""}</button></div>
+  <div class="grid g2">${TRIAGE_LANES.map(([k,label,cls])=>`<div class="panel rail-${cls==='crit'?'c':cls==='warn'?'a':'a'}" style="${cls==='info'||cls==='dim'?'border-left-color:var(--'+(cls==='info'?'info':'stroke2')+')':''}">
+    <div class="panelhead"><span class="eyebrow" style="color:var(--${cls==='crit'?'crit':cls==='warn'?'amber':cls==='info'?'info':'mut2'})">${esc(label)}</span><span class="xs mut2 right">${byLane[k].length}</span></div>
+    ${byLane[k].sort((a,b)=>(b.urgency||0)-(a.urgency||0)).map(e=>{const h=hospOf(e.id);return `<div style="padding:7px 0;border-bottom:1px solid var(--stroke)"><div class="rowlink" onclick="go('#/e/email/${e.id}')"><b class="sm">${esc(e.subject||"(no subject)").slice(0,52)}</b> <span class="xs mut2">${h?h.code:""} ${"●".repeat(e.urgency||1)}</span></div>
+      ${e.triage&&e.triage.want?`<div class="xs mut" style="margin:2px 0">→ ${esc(e.triage.want).slice(0,90)}</div>`:""}
+      ${e.triage&&e.triage.action?`<div class="xs" style="color:var(--amber2)">↪ ${esc(e.triage.action).slice(0,90)}</div>`:""}
+      <div class="flexr" style="margin-top:4px"><button class="btn sm" onclick="runItemAction('${e.id}','reply')">Draft Reply</button><button class="btn sm" onclick="runItemAction('${e.id}','summarize')">Summarize</button></div></div>`}).join("")||'<div class="empty">Empty.</div>'}</div>`).join("")}</div></div>`;
+};
+async function triageInbox(){
+  const note=aiUnavailableNote();if(note){toast(note,"am");return}
+  const todo=DB.emails.filter(e=>!e.triage).slice(0,40);
+  if(!todo.length){toast("Inbox already triaged — re-ingest or clear a triage to redo","ok");return}
+  toast("Triaging "+todo.length+" email(s)…");
+  const payload=todo.map(e=>{const h=hospOf(e.id);return "["+e.id+"] "+(h?h.code+" ":"")+"urg"+(e.urgency||1)+" | "+(e.subject||"(no subject)")+" — "+((e.summary||e.body||"").slice(0,300))}).join("\n");
+  const prompt='Triage these emails for the director. For each, classify into exactly one lane: "Decision" (needs his decision), "Reply" (needs a reply from him), "Waiting" (waiting on someone else), or "FYI". Also give "want" (one short line: what it is / what is being asked) and "action" (one short line: the single best next move). Return ONLY a JSON array, no prose: [{"id":"...","lane":"Decision|Reply|Waiting|FYI","want":"...","action":"..."}]\n\nEMAILS:\n'+payload;
+  try{
+    const arr=parseAIJSON(await AI([{role:"user",content:prompt}],{system:portfolioContext()+" You are triaging the director's inbox.",max:2600}));
+    if(!Array.isArray(arr))throw new Error("Triage came back unreadable — try again.");
+    let n=0;arr.forEach(it=>{const e=rec(it.id);if(e&&typeOf(it.id)==="email"){const lane=["Decision","Reply","Waiting","FYI"].includes(it.lane)?it.lane:"FYI";e.triage={lane,want:it.want||"",action:it.action||""};e.updatedAt=nowISO();n++}});
+    saveDB();audit("triage",null,null,"Triaged "+n+" emails","ai");toast("Triaged "+n+" email(s)","ok");
+  }catch(e){toast(e.message,"err")}
+  render();
+}
+
+/* ============================ COMMAND READ (proactive) ============================ */
+function proactiveFlags(){
+  const f=[];
+  DB.vendors.forEach(v=>{const stuck=linked(v.id,"project").filter(p=>p.status==="Stuck — Vendor");
+    const sites=new Set(stuck.map(p=>(hospOf(p.id)||{}).id).filter(Boolean));
+    if(sites.size>=2)f.push({k:"crit",t:nameOf(v)+" is blocking projects at "+sites.size+" sites"})});
+  DB.risks.filter(r=>r.status==="Open"&&(r.severity==="critical"||r.severity==="high")).forEach(r=>{const age=daysFrom(r.createdAt);
+    if(age!=null&&age>=30)f.push({k:"warn",t:nameOf(r)+" has been open "+age+" days with no resolution"})});
+  DB.emails.filter(e=>(e.urgency||0)>=5&&!noteCount(e)).forEach(e=>f.push({k:"crit",t:"Top-urgency email unanswered: "+(e.subject||"(no subject)")}));
+  const odI=openInvs().filter(i=>isPast(i.dueDate));if(odI.length)f.push({k:"warn",t:odI.length+" past-due invoice(s) totaling "+fmt$(odI.reduce((s,i)=>s+(i.amount||0),0))});
+  const untri=DB.emails.filter(e=>!e.triage).length;if(untri>=3)f.push({k:"warn",t:untri+" emails waiting to be triaged"});
+  return f.slice(0,8);
+}
+function commandReadPanel(){
+  const flags=proactiveFlags();
+  const brief=(DB.meta&&DB.meta.brief)||null;
+  return `<div class="panel rail-a"><div class="panelhead"><span class="eyebrow am">Command Read</span><button class="btn sm right" onclick="runCommandBrief()">${brief?"Refresh":"Brief Me"}</button></div>
+  ${flags.length?`<div style="margin-bottom:10px">${flags.map(f=>`<div class="sm" style="padding:3px 0"><span class="led ${f.k}"></span>${esc(f.t)}</div>`).join("")}</div>`:'<div class="xs mut2" style="margin-bottom:8px">No automatic red flags right now.</div>'}
+  ${brief?`<div class="sm" style="white-space:pre-wrap;border-top:1px solid var(--stroke);padding-top:9px">${esc(brief.text)}</div><div class="xs mut2" style="margin-top:5px">Briefed ${fmtDT(brief.at)}</div>`:'<div class="xs mut2">Tap “Brief Me” for your three moves today — synthesized from emails, notes, risks, and slipping projects.</div>'}</div>`;
+}
+async function runCommandBrief(){
+  const note=aiUnavailableNote();if(note){toast(note,"am");return}
+  toast("Thinking…");
+  try{const out=await AI([{role:"user",content:"Give me my Command Read for today: the 3 most important moves, what's about to slip, and what needs my decision. Tight and plain — short lines, no tables.\n\nSNAPSHOT:\n"+snapshotFor("portfolio priorities overdue urgent decisions")}],{system:portfolioContext(),max:1100});
+    DB.meta.brief={at:nowISO(),text:out};saveDB();
+  }catch(e){toast(e.message,"err")}
+  render();
+}
+
+/* ============================ DUPLICATE DETECTION & MERGE ============================ */
+function normTitle(s){return String(s||"").toLowerCase().replace(/[^a-z0-9 ]/g,"").replace(/\s+/g," ").trim()}
+function tokenSet(s){return new Set(normTitle(s).split(" ").filter(w=>w.length>2))}
+function simRatio(a,b){const A=tokenSet(a),B=tokenSet(b);if(!A.size||!B.size)return 0;
+  let inter=0;A.forEach(w=>{if(B.has(w))inter++});return inter/Math.max(A.size,B.size);}
+function findDupes(){
+  const pairs=[];
+  ["risk","project","vendor"].forEach(t=>{
+    const arr=DB[col(t)]||[];
+    for(let i=0;i<arr.length;i++)for(let j=i+1;j<arr.length;j++){
+      const a=arr[i],b=arr[j];
+      const sameHosp=(a.hospitalId||null)===(b.hospitalId||null)||!a.hospitalId||!b.hospitalId;
+      if(!sameHosp)continue;
+      const A=tokenSet(nameOf(a)),B=tokenSet(nameOf(b));
+      if(!A.size||!B.size)continue;
+      let inter=0;A.forEach(w=>{if(B.has(w))inter++});
+      const coef=inter/Math.min(A.size,B.size); // overlap coefficient
+      if(inter>=2&&coef>=0.5)pairs.push({t,a:a.id,b:b.id,sim:Math.round(coef*100)});
+    }
+  });
+  return pairs.sort((x,y)=>y.sim-x.sim);
+}
+function dupeBanner(){
+  const d=findDupes();if(!d.length)return"";
+  return `<div class="panel rail-a" style="margin-bottom:14px"><div class="panelhead"><span class="eyebrow am">Possible Duplicates</span><span class="xs mut2 right">${d.length} pair${d.length>1?"s":""} found</span></div>
+    ${d.slice(0,6).map(p=>{const a=rec(p.a),b=rec(p.b),h=hospOf(p.a);return `<div class="flexr" style="padding:6px 0;border-bottom:1px solid var(--stroke)"><div class="grow sm"><b>${esc(nameOf(a)).slice(0,40)}</b> <span class="mut2">≈ ${p.sim}% ≈</span> <b>${esc(nameOf(b)).slice(0,40)}</b> <span class="xs mut2">${h?h.code:""}</span></div>
+      <button class="btn sm" onclick="reviewMerge('${p.a}','${p.b}')">Review &amp; Merge</button></div>`}).join("")}</div>`;
+}
+function reviewMerge(idA,idB){
+  const a=rec(idA),b=rec(idB);if(!a||!b)return;
+  const card=(r,other)=>`<div class="panel tight" style="margin:6px 0"><div class="sm"><b>${esc(nameOf(r))}</b></div>
+    <div class="xs mut">${esc((r.summary||r.body||"").slice(0,120))||"no summary"}</div>
+    <div class="xs mut2" style="margin-top:3px">${[r.status,r.severity,r.category,r.owner&&("owner "+r.owner),noteCount(r)+" notes",linked(r.id).length+" links","created "+fmtD(r.createdAt)].filter(Boolean).join(" · ")}</div>
+    <button class="btn sm primary" style="margin-top:7px" onclick="doMerge('${r.id}','${other}')">Keep this · fold in the other</button></div>`;
+  openModal(`<div class="eyebrow am" style="margin-bottom:6px">Merge Duplicates</div>
+    <div class="xs mut" style="margin-bottom:8px">Pick the record to keep. The other's notes and connections fold into it, then it's removed. This can't be undone — export a backup first if unsure.</div>
+    ${card(a,idB)}${card(b,idA)}`);
+}
+function doMerge(keepId,dropId){
+  const keep=rec(keepId),drop=rec(dropId);if(!keep||!drop)return;
+  (drop.noteLog||[]).forEach(n=>{(keep.noteLog=keep.noteLog||[]).push(n)});
+  if(!keep.summary&&drop.summary)keep.summary=drop.summary;
+  if(!keep.hospitalId&&drop.hospitalId)keep.hospitalId=drop.hospitalId;
+  linked(dropId).forEach(o=>addLink(keepId,o.id,"merge"));
+  addNote(keepId,"Merged in duplicate: "+nameOf(drop));
+  keep.updatedAt=nowISO();
+  delRec(dropId);
+  closeModal();toast("Merged — kept "+nameOf(keep),"ok");render();
+}
+
+/* ============================ SCORE-OVER-TIME TRENDS ============================ */
+function recordScoreSnapshot(){
+  DB.meta.scoreHistory=DB.meta.scoreHistory||[];
+  const today=todayISO();
+  const sites={};DB.hospitals.forEach(h=>sites[h.code]=hospScore(h).score);
+  const snap={date:today,portfolio:portfolioScore(),sites};
+  const last=DB.meta.scoreHistory[DB.meta.scoreHistory.length-1];
+  if(last&&last.date===today){DB.meta.scoreHistory[DB.meta.scoreHistory.length-1]=snap;}
+  else DB.meta.scoreHistory.push(snap);
+  DB.meta.scoreHistory=DB.meta.scoreHistory.slice(-180); // ~6 months
+  saveDB();
+}
+function siteTrend(code){
+  const hist=(DB.meta&&DB.meta.scoreHistory)||[];
+  const pts=hist.map(s=>s.sites&&s.sites[code]).filter(v=>v!=null);
+  if(pts.length<2)return null;
+  return {delta:pts[pts.length-1]-pts[0],pts};
+}
+function trendArrow(code){
+  const t=siteTrend(code);if(!t)return"";
+  if(t.delta>=4)return ' <span style="color:var(--ok)">▲'+t.delta+'</span>';
+  if(t.delta<=-4)return ' <span style="color:var(--crit)">▼'+Math.abs(t.delta)+'</span>';
+  return ' <span class="mut2">▬</span>';
+}
+function sparkline(pts,w=120,h=26){
+  if(!pts||pts.length<2)return"";
+  const min=Math.min(...pts,0),max=Math.max(...pts,100),rng=max-min||1;
+  const step=w/(pts.length-1);
+  const d=pts.map((p,i)=>(i?"L":"M")+(i*step).toFixed(1)+","+(h-((p-min)/rng)*h).toFixed(1)).join(" ");
+  const last=pts[pts.length-1],col=last>=80?"var(--ok)":last>=65?"var(--amber)":"var(--crit)";
+  return `<svg width="${w}" height="${h}" style="vertical-align:middle"><path d="${d}" fill="none" stroke="${col}" stroke-width="2"/></svg>`;
+}
+function portfolioTrendPanel(){
+  const hist=(DB.meta&&DB.meta.scoreHistory)||[];
+  if(hist.length<2)return `<div class="panel tight"><div class="xs mut2">Portfolio trend builds as the days pass — your score is being logged once a day. Come back tomorrow to see the line.</div></div>`;
+  const pts=hist.map(s=>s.portfolio);const delta=pts[pts.length-1]-pts[0];
+  return `<div class="panel tight"><div class="panelhead"><span class="eyebrow am">Portfolio Trend</span><span class="xs mut2 right">${hist.length} days · ${delta>=0?"+":""}${delta} pts</span></div>
+    <div class="flexr">${sparkline(pts,260,40)}<span class="sm ${delta>=0?"":""}" style="color:${delta>=0?"var(--ok)":"var(--crit)"}">${delta>=0?"▲ improving":"▼ slipping"}</span></div></div>`;
+}
+
+/* ============================ FORWARD-TO-INGEST (inbound email queue) ============================ */
+async function syncInbox(){
+  if(Store.env!=="cloud"){toast("Connect Cloud Sync first — the inbox arrives through the cloud","am");return}
+  const note=aiUnavailableNote();if(note){toast(note,"am");return}
+  let queue;
+  try{queue=await CLOUD.kv("GET","wuos:inbox")}catch(e){toast(e.message,"err");return}
+  if(!Array.isArray(queue)||!queue.length){toast("No new forwarded emails waiting","ok");return}
+  toast("Pulling "+queue.length+" forwarded email(s)…");
+  let done=0;const ids=[];
+  for(const m of queue){
+    const text="From: "+(m.from||"")+"\nSubject: "+(m.subject||"")+"\n\n"+(m.text||"").slice(0,14000);
+    try{
+      const ex=await extractFromContent([{type:"text",text}],m.subject||"forwarded email");
+      const anchor=applyExtraction(ex,{text},m.subject||"Forwarded email","email");
+      ids.push(anchor.id);done++;
+    }catch(e){/* skip the bad one, keep going */}
+  }
+  try{await CLOUD.kv("SET","wuos:inbox",[])}catch(e){}
+  audit("inbox",null,null,"Pulled "+done+" forwarded email(s)","ai");
+  toast("Ingested "+done+" forwarded email(s) — triaging…","ok");
+  // auto-triage the new arrivals
+  if(ids.length)await triageInbox();
+  render();
+}
 /* ============================ BACKUP / RESTORE ============================ */
 async function exportJSON(){
   toast("Building backup…");
@@ -1376,8 +1728,8 @@ async function resetAll(){for(const d of (DB.documents||[]).filter(x=>x.hasFile)
 
 /* ============================ ROUTER & BOOT ============================ */
 let ROUTE={name:"dashboard"};
-const NAV=[["Command",[["dashboard","◈","Dashboard"],["hospitals","⬢","Hospitals"],["graph","✦","Knowledge Graph"],["brain","◎","AI Brain"]]],
-  ["Operate",[["ingest","⇣","Ingest Data"],["projects","◧","Projects"],["invoices","⌸","Invoices"],["email","✉","Email Intel"],["risks","⚠","Risks"],["actions","➤","Actions"],["vendors","⬡","Vendors"]]],
+const NAV=[["Command",[["dashboard","◈","Dashboard"],["evaluate","◔","System Eval"],["hospitals","⬢","Hospitals"],["graph","✦","Knowledge Graph"],["brain","◎","AI Brain"]]],
+  ["Operate",[["ingest","⇣","Ingest Data"],["triage","▤","Email Triage"],["projects","◧","Projects"],["invoices","⌸","Invoices"],["email","✉","Email Intel"],["risks","⚠","Risks"],["actions","➤","Actions"],["vendors","⬡","Vendors"]]],
   ["Plan & Report",[["matrix","◫","Project Matrix"],["radar","✹","Project Radar"],["calendar","▦","Calendar"],["reports","▥","Reports"],["settings","⚒","Settings"]]]];
 function navBadge(name){
   if(name==="actions")return DB.actions.filter(a=>a.status==="Open"&&isPast(a.due)).length;
@@ -1385,7 +1737,8 @@ function navBadge(name){
   if(name==="invoices")return openInvs().filter(i=>isPast(i.dueDate)).length;
   if(name==="risks")return DB.risks.filter(r=>r.status==="Open"&&r.severity==="critical").length;
   if(name==="matrix")return openProjects().filter(p=>p.status==="Stuck — Vendor").length;
-  if(name==="radar")return openProjects().filter(p=>projHeatBand(p)===0).length;return 0;
+  if(name==="radar")return openProjects().filter(p=>projHeatBand(p)===0).length;
+  if(name==="triage")return DB.emails.filter(e=>!e.triage).length;return 0;
 }
 function renderNav(){
   $("#nav").innerHTML=NAV.map(([sec,items])=>`<div class="navsec">${sec}</div>`+items.map(([n,ic,l])=>{const b=navBadge(n);
@@ -1422,10 +1775,11 @@ async function boot(){
   DB=await Store.get(DB_KEY);AUDIT=await Store.get(AUDIT_KEY)||[];
   if(!DB||!DB.hospitals){DB=blankDB();seed();await Store.set(DB_KEY,DB);await Store.set(AUDIT_KEY,AUDIT)}
   migrate();
+  recordScoreSnapshot();
   CLOUD.url=SETTINGS.cloudUrl||"";CLOUD.key=SETTINGS.cloudKey||"";CLOUD.email=SETTINGS.cloudEmail||"";
-  try{const s=JSON.parse(sessionStorage.getItem("wuos:sess")||"null");
-    if(s&&s.t&&CLOUD.configured()){CLOUD.token=s.t;CLOUD.refresh=s.r||"";CLOUD.email=s.e||CLOUD.email;CLOUD.userId=s.u||"";
-      Store.env="cloud";}}catch(e){}
+  try{const s=JSON.parse(localStorage.getItem("wuos:sess")||"null");
+    if(s&&s.t){CLOUD.url=s.url||CLOUD.url;CLOUD.key=s.key||CLOUD.key;CLOUD.token=s.t;CLOUD.refresh=s.r||"";CLOUD.email=s.e||CLOUD.email;CLOUD.userId=s.u||"";
+      if(CLOUD.configured()){Store.env="cloud";CLOUD.refreshToken().then(()=>{cloudChip()}).catch(()=>{});}}}catch(e){}
   parseRoute();render();
   window.addEventListener("hashchange",()=>{parseRoute();render()});
   $("#gsearchinput").addEventListener("click",openSearch);

@@ -1,10 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
-);
-
 export async function POST(request) {
   try {
     const body = await request.json();
@@ -17,6 +12,12 @@ export async function POST(request) {
         headers: { 'Content-Type': 'application/json' }
       });
     }
+
+    // Create client with SERVICE_ROLE key (has full permissions)
+    const supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY
+    );
 
     // Save to Supabase
     const { data, error } = await supabase

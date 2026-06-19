@@ -35,7 +35,7 @@ export default async function handler(req, res) {
   try {
     // Insert into Supabase
     const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/universe_emails`,
+      `${SUPABASE_URL}/rest/v1/universe_store`,
       {
         method: 'POST',
         headers: {

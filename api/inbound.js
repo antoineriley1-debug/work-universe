@@ -57,12 +57,13 @@ export default async function handler(req, res) {
       const error = await response.text();
       console.error(`Supabase error: ${response.status}`, error);
       
-      // Return 201 anyway if email was accepted, even if Supabase fails
-      return res.status(201).json({
-        success: true,
-        message: 'Email accepted (Supabase storage pending)',
+      // Return error with details so we can debug
+      return res.status(response.status).json({
+        success: false,
+        message: 'Failed to store email in Supabase',
         email: { from, to, subject },
         supabase_error: error,
+        supabase_status: response.status,
       });
     }
 

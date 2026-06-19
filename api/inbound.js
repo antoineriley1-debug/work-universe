@@ -35,7 +35,7 @@ export default async function handler(req, res) {
   try {
     // Insert into Supabase
     const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/ingested_emails`,
+      `${SUPABASE_URL}/rest/v1/inbox_emails`,
       {
         method: 'POST',
         headers: {
@@ -44,11 +44,11 @@ export default async function handler(req, res) {
           'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
         },
         body: JSON.stringify({
-          from,
-          to,
+          sender: from,
+          recipient: to,
           subject,
-          text,
-          html,
+          body_text: text,
+          body_html: html,
         }),
       }
     );

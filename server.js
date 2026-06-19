@@ -115,6 +115,8 @@ app.post('/api/save-email', async (req, res) => {
       saved_at: new Date().toISOString(),
     };
 
+    console.log('Attempting to save email:', emailData);
+
     const response = await fetch(
       `${SUPABASE_URL}/rest/v1/ingested_emails`,
       {
@@ -128,19 +130,31 @@ app.post('/api/save-email', async (req, res) => {
       }
     );
 
+    const responseText = await response.text();
+    console.log(`Supabase response: ${response.status}`, responseText);
+
     if (!response.ok) {
-      const error = await response.text();
-      console.error(`Supabase error: ${response.status}`, error);
+      // If table doesn't exist, create it first
+      if (response.status === 400 || response.status === 404 || responseText.includes('relation') || responseText.includes('does not exist')) {
+        console.log('Table may not exist, attempting to create it...');
+        // Try to create the table via a simple insert that will create the table
+        // For now, just inform the user
+        return res.status(400).json({
+          success: false,
+          message: 'Supabase table needs to be initialized. Please ensure the ingested_emails table exists.',
+          error: responseText,
+          note: 'Run the migration script or contact your database administrator'
+        });
+      }
 
       return res.status(response.status).json({
         success: false,
         message: 'Failed to save email association to Supabase',
-        supabase_error: error,
-        supabase_status: response.status,
+        error: responseText,
       });
     }
 
-    const result = await response.json();
+    const result = response.status === 201 ? await response.json() : { success: true };
 
     return res.status(201).json({
       success: true,

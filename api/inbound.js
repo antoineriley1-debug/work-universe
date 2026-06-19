@@ -47,8 +47,6 @@ export default async function handler(req, res) {
           sender: from,
           recipient: to,
           subject,
-          body_text: text,
-          body_html: html,
         }),
       }
     );

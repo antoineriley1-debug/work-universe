@@ -1333,8 +1333,8 @@ function invoiceDetail(i){
 /* ============================ EMAIL INTELLIGENCE ============================ */
 Views.email=()=>`<div class="view"><div class="pghead"><div class="grow"><div class="eyebrow am">Email Intelligence</div><h1 class="pg">Inbox Brain</h1>
   <div class="pgsub">Paste any email in Ingest with "treat as email" checked — it lands here linked to hospital, project, vendor, people, and timeline.</div></div></div>
-  <div class="panel"><table class="tbl"><thead><tr><th>Subject</th><th>From</th><th>Hospital</th><th>Urgency</th><th>Summary</th></tr></thead><tbody>
-  ${DB.emails.slice().reverse().map(e=>{const h=hospOf(e.id);return `<tr class="rowlink" onclick="go('#/e/email/${e.id}')"><td><b>${esc(e.subject)}</b></td><td>${esc(e.from||"—")}</td><td class="mono xs">${h?esc(h.code):"—"}</td><td>${"●".repeat(e.urgency||1)}</td><td class="xs mut">${esc((e.summary||"").slice(0,80))}</td></tr>`}).join("")||'<tr><td colspan="5" class="empty">No emails yet.</td></tr>'}</tbody></table></div></div>`;
+  <div class="panel"><table class="tbl"><thead><tr><th>Subject</th><th>From</th><th>Hospital</th><th>Urgency</th><th>Summary</th><th>Action</th></tr></thead><tbody>
+  ${DB.emails.slice().reverse().map(e=>{const h=hospOf(e.id);return `<tr><td class="rowlink" onclick="go('#/e/email/${e.id}')" style="cursor:pointer"><b>${esc(e.subject)}</b></td><td>${esc(e.from||"—")}</td><td class="mono xs">${h?esc(h.code):"—"}</td><td>${"●".repeat(e.urgency||1)}</td><td class="xs mut">${esc((e.summary||"").slice(0,80))}</td><td><button class="btn sm" onclick="event.stopPropagation();saveEmailModal('${e.id}')">💾 Save</button></td></tr>`}).join("")||'<tr><td colspan="6" class="empty">No emails yet.</td></tr>'}</tbody></table></div></div>`;
 function emailDetail(e){
   return `<div class="panel tight" style="margin-bottom:14px"><div class="flexr">
     <button class="btn primary" onclick="investigate('${e.id}')">🔬 Investigate Thoroughly</button>
@@ -1759,6 +1759,46 @@ function linkModal(id){
 function renderLinkResults(id){
   const hits=localSearch($("#lsearch").value,16).filter(x=>x.r.id!==id);
   $("#lres").innerHTML=hits.map(x=>`<div class="srow"><span style="color:${ENT[x.t].color}">${ENT[x.t].icon}</span> ${esc(nameOf(x.r)).slice(0,56)}<button class="btn sm right" onclick="link('${id}','${x.r.id}','evidence');toast('Linked','ok');render();closeModal()">Link</button></div>`).join("")||'<div class="empty">No matches.</div>';
+}
+async function saveEmailModal(id){
+  const email=rec(id);
+  const hospitalList=DB.hospitals.map(h=>`<option value="${h.id}">${esc(h.code)} - ${esc(h.name)}</option>`).join("");
+  openModal(`<div class="eyebrow am" style="margin-bottom:10px">Save Email to Hospital</div>
+    <div class="formrow"><label>Email</label><div class="xs" style="padding:8px;background:rgba(86,214,232,.05);border:1px solid var(--stroke);border-radius:2px;color:var(--ink2)">${esc(email.subject||"—")}</div></div>
+    <div class="formrow"><label>From</label><div class="xs" style="padding:8px;background:rgba(86,214,232,.05);border:1px solid var(--stroke);border-radius:2px;color:var(--ink2)">${esc(email.from||"—")}</div></div>
+    <div class="formrow"><label>Select Hospital</label><select id="hospitalSelect">${hospitalList}</select></div>
+    <button class="btn primary" onclick="submitEmailSave('${id}')">💾 Save Email to Hospital</button>`);
+  $("#hospitalSelect").focus();
+}
+async function submitEmailSave(emailId){
+  const hospitalId=$("#hospitalSelect").value;
+  if(!hospitalId){toast('Please select a hospital','warn');return;}
+  const email=rec(emailId);
+  try{
+    const response=await fetch('/api/save-email',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        emailId:emailId,
+        hospitalId:hospitalId,
+        subject:email.subject,
+        from:email.from,
+        summary:email.summary,
+        body:email.body
+      })
+    });
+    const data=await response.json();
+    if(response.ok){
+      toast('Email saved to hospital','ok');
+      updRec(emailId,{hospitalId:hospitalId},"user");
+      closeModal();
+      render();
+    }else{
+      toast(data.error||'Failed to save email','crit');
+    }
+  }catch(e){
+    toast('Error saving email: '+e.message,'crit');
+  }
 }
 
 /* ============================ SETTINGS ============================ */

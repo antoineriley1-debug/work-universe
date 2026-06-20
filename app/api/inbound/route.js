@@ -2,33 +2,49 @@ import { createClient } from '@supabase/supabase-js';
 
 export async function POST(request) {
   try {
-    const body = await request.json();
-    const { secret, from, subject, text } = body;
+    // Validate Authorization header
+    const authHeader = request.headers.get('authorization');
+    const expectedToken = 'Bearer medstar-inbox-2026';
 
-    // Validate secret
-    if (secret !== process.env.INBOUND_SECRET) {
+    if (!authHeader || authHeader !== expectedToken) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    // Create client with SERVICE_ROLE key (has full permissions)
+    // Parse request body
+    const body = await request.json();
+    const { from, to, subject, text, html } = body;
+
+    // Validate required fields
+    if (!from || !subject || !text) {
+      return new Response(
+        JSON.stringify({ error: 'Missing required fields: from, subject, text' }),
+        {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    // Create Supabase client with SERVICE_ROLE key (has full permissions)
     const supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_KEY
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    // Save to Supabase
+    // Store email in Supabase
     const { data, error } = await supabase
-      .from('emails')
+      .from('ingested_emails')
       .insert([
         {
           from,
+          to: to || null,
           subject,
-          body: text,
-          received_at: new Date().toISOString(),
-          user_id: process.env.INBOUND_USER_ID
+          text_body: text,
+          html_body: html || null,
+          received_at: new Date().toISOString()
         }
       ])
       .select();

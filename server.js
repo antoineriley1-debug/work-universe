@@ -268,8 +268,8 @@ app.post('/api/save-email', async (req, res) => {
 // Email Inbound Endpoint
 app.post('/api/inbound', async (req, res) => {
   const INBOUND_SECRET = process.env.INBOUND_SECRET || 'medstar-inbox-2026';
-  const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kfkjagottniayrxayeav.supabase.co';
-  const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtma2phZ290dG5pYXlyeGF5ZWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk0MTEwMjksImV4cCI6MjA5NDk4NzAyOX0.OGQYNdzWTM51RRFintWgN7RUmUjpzC2YhLAxgRP25gA';
+  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || 'https://kfkjagottniayrxayeav.supabase.co';
+  const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -284,24 +284,30 @@ app.post('/api/inbound', async (req, res) => {
 
   const { from, to, subject, text, html } = req.body;
 
-  if (!from || !to || !subject) {
+  // Make 'to' optional since it might come from the Cloudflare Worker
+  if (!from || !subject || !text) {
     return res.status(400).json({
-      error: 'Missing required fields: from, to, subject'
+      error: 'Missing required fields: from, subject, text'
     });
   }
 
   try {
     const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/universe_store`,
+      `${SUPABASE_URL}/rest/v1/ingested_emails`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'apikey': SUPABASE_SERVICE_KEY,
+          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
         },
         body: JSON.stringify({
-          data: JSON.stringify({ from, to, subject, text, html }),
+          from,
+          to: to || null,
+          subject,
+          text_body: text,
+          html_body: html || null,
+          received_at: new Date().toISOString(),
         }),
       }
     );
@@ -321,7 +327,7 @@ app.post('/api/inbound', async (req, res) => {
 
     const result = await response.json();
 
-    return res.status(201).json({
+    return res.status(200).json({
       success: true,
       message: 'Email ingested successfully',
       email: { from, to, subject },

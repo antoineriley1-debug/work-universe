@@ -1,3 +1,6 @@
 {
- "functions": { "api/anthropic.js": { "maxDuration": 60 } }
+  "functions": {
+    "api/anthropic.js": { "maxDuration": 60 },
+    "api/inbound.js": { "maxDuration": 30 }
+  }
 }

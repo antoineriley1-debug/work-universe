@@ -2,5 +2,17 @@
   "functions": {
     "api/anthropic.js": { "maxDuration": 60 },
     "api/inbound.js": { "maxDuration": 30 }
-  }
+  },
+  "builds": [
+    {
+      "src": "server.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "server.js"
+    }
+  ]
 }

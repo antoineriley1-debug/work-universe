@@ -1,5 +1,4 @@
 // /api/inbound — Email ingest from Cloudflare Worker
-// Stores emails to Supabase for the Work Universe pipeline
 
 const { createClient } = require('@supabase/supabase-js');
 
@@ -7,7 +6,12 @@ const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kfkjagottniayrxayeav.s
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtma2phZ290dG5pYXlyeGF5ZWF2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTQxMTAyOSwiZXhwIjoyMDk0OTg3MDI5fQ.gQqL_YcOD-DVLNdEiT_yE4EQGSL_OEAe03FTmQ2UxvI';
 const EXPECTED_TOKEN = 'medstar-inbox-2026';
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+let supabase = null;
+try {
+  supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+} catch (e) {
+  console.error('Failed to initialize Supabase:', e.message);
+}
 
 module.exports = async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
@@ -29,9 +33,17 @@ module.exports = async (req, res) => {
 
     // Get body
     const body = req.body;
+    
+    // Debug: log what we received
+    console.log('[INBOUND] Body type:', typeof body, 'keys:', Object.keys(body || {}));
+    
     if (!body || typeof body !== 'object') {
       res.statusCode = 400;
-      return res.end(JSON.stringify({ error: 'Missing or invalid body' }));
+      return res.end(JSON.stringify({ 
+        error: 'Missing or invalid body',
+        received_type: typeof body,
+        received_value: String(body).substring(0, 50)
+      }));
     }
 
     const { from, to, subject, text, html } = body;
@@ -40,8 +52,17 @@ module.exports = async (req, res) => {
     if (!from || !to || !subject) {
       res.statusCode = 400;
       return res.end(JSON.stringify({
-        error: 'Missing required: from, to, subject'
+        error: 'Missing required fields',
+        have_from: !!from,
+        have_to: !!to,
+        have_subject: !!subject
       }));
+    }
+
+    // Check Supabase
+    if (!supabase) {
+      res.statusCode = 500;
+      return res.end(JSON.stringify({ error: 'Supabase not initialized' }));
     }
 
     // Insert into Supabase
@@ -60,7 +81,8 @@ module.exports = async (req, res) => {
     if (error) {
       res.statusCode = 500;
       return res.end(JSON.stringify({
-        error: 'Database error: ' + error.message
+        error: 'Database error',
+        message: error.message
       }));
     }
 
@@ -73,6 +95,7 @@ module.exports = async (req, res) => {
     }));
 
   } catch (err) {
+    console.error('[INBOUND] Exception:', err);
     res.statusCode = 500;
     res.end(JSON.stringify({
       error: err.message

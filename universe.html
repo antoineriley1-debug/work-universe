@@ -1332,11 +1332,20 @@ function invoiceDetail(i){
 
 /* ============================ EMAIL INTELLIGENCE ============================ */
 Views.email=()=>`<div class="view"><div class="pghead"><div class="grow"><div class="eyebrow am">Email Intelligence</div><h1 class="pg">Inbox Brain</h1>
-  <div class="pgsub">Paste any email in Ingest with "treat as email" checked — it lands here linked to hospital, project, vendor, people, and timeline.</div></div></div>
-  <div class="panel"><table class="tbl"><thead><tr><th>Subject</th><th>From</th><th>Hospital</th><th>Urgency</th><th>Summary</th><th>Action</th></tr></thead><tbody>
-  ${DB.emails.slice().reverse().map(e=>{const h=hospOf(e.id);return `<tr><td class="rowlink" onclick="go('#/e/email/${e.id}')" style="cursor:pointer"><b>${esc(e.subject)}</b></td><td>${esc(e.from||"—")}</td><td class="mono xs">${h?esc(h.code):"—"}</td><td>${"●".repeat(e.urgency||1)}</td><td class="xs mut">${esc((e.summary||"").slice(0,80))}</td><td><button class="btn sm" onclick="event.stopPropagation();saveEmailModal('${e.id}')">💾 Save</button></td></tr>`}).join("")||'<tr><td colspan="6" class="empty">No emails yet.</td></tr>'}</tbody></table></div></div>`;
+  <div class="pgsub">Paste any email in Ingest with "treat as email" checked — it lands here linked to hospital, project, vendor, people, and timeline. Use AI actions to analyze, summarize, and escalate.</div></div></div>
+  <div class="panel"><table class="tbl"><thead><tr><th>Subject</th><th>From</th><th>Hospital</th><th>Urgency</th><th>Summary</th><th>Actions</th></tr></thead><tbody>
+  ${DB.emails.slice().reverse().map(e=>{const h=hospOf(e.id);return `<tr><td class="rowlink" onclick="go('#/e/email/${e.id}')" style="cursor:pointer"><b>${esc(e.subject)}</b></td><td>${esc(e.from||"—")}</td><td class="mono xs">${h?esc(h.code):"—"}</td><td>${"●".repeat(e.urgency||1)}</td><td class="xs mut">${esc((e.summary||"").slice(0,80))}</td><td style="white-space:nowrap"><div class="flexr" style="gap:4px"><button class="btn sm" style="font-size:11px;padding:4px 8px" title="Summarize" onclick="event.stopPropagation();emailAI('${e.id}','summarize')">🔍</button><button class="btn sm" style="font-size:11px;padding:4px 8px" title="Escalate" onclick="event.stopPropagation();emailAI('${e.id}','escalate')">⬆️</button><button class="btn sm" style="font-size:11px;padding:4px 8px" title="Infer" onclick="event.stopPropagation();emailAI('${e.id}','infer')">💡</button><button class="btn sm" style="font-size:11px;padding:4px 8px" title="Intent" onclick="event.stopPropagation();emailAI('${e.id}','intent')">🎯</button><button class="btn sm" style="font-size:11px;padding:4px 8px" title="Reply" onclick="event.stopPropagation();emailAI('${e.id}','reply')">✍️</button><button class="btn sm" style="font-size:11px;padding:4px 8px" title="Save" onclick="event.stopPropagation();saveEmailModal('${e.id}')">💾</button></div></td></tr>`}).join("")||'<tr><td colspan="6" class="empty">No emails yet.</td></tr>'}</tbody></table></div></div>`;
 function emailDetail(e){
-  return `<div class="panel tight" style="margin-bottom:14px"><div class="flexr">
+  return `<div style="margin-bottom:14px"><div class="panel tight" style="margin-bottom:8px"><div class="flexr" style="gap:6px;flex-wrap:wrap">
+    <button class="btn" style="font-size:11px" title="Summarize" onclick="emailAI('${e.id}','summarize')">🔍 Summarize</button>
+    <button class="btn" style="font-size:11px" title="Escalate" onclick="emailAI('${e.id}','escalate')">⬆️ Escalate</button>
+    <button class="btn" style="font-size:11px" title="Infer" onclick="emailAI('${e.id}','infer')">💡 Infer</button>
+    <button class="btn" style="font-size:11px" title="Intent" onclick="emailAI('${e.id}','intent')">🎯 Intent</button>
+    <button class="btn" style="font-size:11px" title="Reply" onclick="emailAI('${e.id}','reply')">✍️ Reply</button>
+    <button class="btn primary" style="font-size:11px" title="Save" onclick="saveEmailModal('${e.id}')">💾 Save to Hospital</button>
+  </div></div>
+  <div class="panel tight" id="emailAIResult"><div class="xs mut2">Click an AI action above or the original Investigate/Draft options below.</div></div></div>
+  <div class="panel tight" style="margin-bottom:14px"><div class="flexr">
     <button class="btn primary" onclick="investigate('${e.id}')">🔬 Investigate Thoroughly</button>
     <button class="btn" onclick="draftReply('${e.id}')">✍ Draft Reply</button>
     <span class="xs mut2">Investigate pulls full history across memory: what it's really about, what's at risk, who owes what, what to send.</span></div></div>`;
@@ -1355,6 +1364,42 @@ async function draftReply(id){
   try{const r=await AI.call([{role:"user",content:portfolioContext()+"\nDraft a reply from Antoine Riley. Plain prose, direct, professional, no bullet points, no hyphens as separators, short. Email:\nFROM "+(e.from||"")+" / "+e.subject+"\n"+(e.body||"").slice(0,5000)}],{maxTokens:1000});
     box.innerHTML='<div class="panelhead"><span class="eyebrow am">Draft Reply</span><button class="btn sm right" onclick="navigator.clipboard.writeText($(\'#invout\').innerText);toast(\'Copied\',\'ok\')">Copy</button></div><div id="invout" style="white-space:pre-wrap;font-size:13.5px">'+esc(r.text)+'</div>';
   }catch(err){box.innerHTML='<div class="empty">'+esc(err.message)+'</div>'}
+}
+async function emailAI(id,action){
+  const e=rec(id);if(!e)return;
+  const box=$("#emailAIResult");if(!box)return;
+  box.innerHTML='<div class="panelhead"><span class="eyebrow">Processing...</span></div><div class="thinking"><i></i><i></i><i></i></div>';
+  try{
+    const r=await fetch("/api/email-action",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,emailId:id,emailBody:e.body||"",emailSubject:e.subject||"",emailFrom:e.from||""})});
+    const j=await r.json();
+    if(!r.ok){box.innerHTML='<div class="empty">Error: '+esc(j.error||"Unknown error")+'</div>';return}
+    const labels={summarize:"🔍 Summary",escalate:"⬆️ Escalation",infer:"💡 Inference",intent:"🎯 Intent",reply:"✍️ Reply",commit:"✅ Commit"};
+    box.innerHTML='<div class="panelhead"><span class="eyebrow am">'+labels[action]+'</span><button class="btn sm right" onclick="navigator.clipboard.writeText($(\'#emailAIResultContent\').innerText);toast(\'Copied\',\'ok\')">Copy</button></div><div id="emailAIResultContent" style="white-space:pre-wrap;font-size:13px;padding:12px;background:rgba(10,15,23,.7);border-radius:2px">'+esc(j.result)+'</div>';
+  }catch(err){box.innerHTML='<div class="empty">'+esc(err.message)+'</div>'}
+}
+async function saveEmailModal(id){
+  const e=rec(id);if(!e)return;
+  const hosp=DB.hospitals||[];
+  const modal=document.createElement("div");modal.innerHTML=`
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:9999" onclick="if(event.target===this)this.remove()">
+      <div class="panel" style="width:420px;max-width:90vw">
+        <div class="panelhead"><span class="eyebrow am">Save Email to Hospital</span><button class="btn sm right" style="background:none;border:none;cursor:pointer;font-size:18px" onclick="this.closest('[style*=position:fixed]').remove()">✕</button></div>
+        <div style="margin:14px 0"><div class="eyebrow" style="margin-bottom:7px">Select Hospital:</div>
+        <select id="saveEmailHosp" style="width:100%"><option value="">—— Choose Hospital ——</option>${hosp.map(h=>'<option value="'+h.id+'">'+esc(h.code)+' — '+esc(h.name)+'</option>').join("")}</select></div>
+        <div style="display:flex;gap:8px"><button class="btn" onclick="this.closest('div[style*=position:fixed]').remove()">Cancel</button><button class="btn primary" onclick="commitEmailSave('${id}')">Save Email</button></div>
+      </div>
+    </div>
+  `;document.body.appendChild(modal)
+}
+async function commitEmailSave(id){
+  const e=rec(id);const hid=$("#saveEmailHosp").value;if(!hid){toast("Select a hospital","warn");return}
+  try{
+    const r=await fetch("/api/save-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({emailId:id,hospitalId:hid,subject:e.subject,from:e.from,summary:e.summary,body:e.body})});
+    const j=await r.json();
+    if(!r.ok){toast("Error: "+(j.error||j.message||"Unknown"),"warn");return}
+    document.querySelector("[style*='position:fixed']")?.remove();
+    toast("Email saved to hospital","ok");
+  }catch(err){toast("Save failed: "+err.message,"warn")}
 }
 async function aiProjectSummary(id){
   const p=rec(id);const box=$("#entAI");box.innerHTML='<div class="thinking"><i></i><i></i><i></i></div>';

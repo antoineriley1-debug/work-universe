@@ -91,6 +91,100 @@ app.post('/api/anthropic', async (req, res) => {
   }
 });
 
+// Email AI Action Endpoints
+app.post('/api/email-action', async (req, res) => {
+  const { action, emailId, emailBody, emailSubject, emailFrom } = req.body;
+  const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
+
+  if (!ANTHROPIC_KEY) {
+    return res.status(500).json({ error: 'Server missing ANTHROPIC_API_KEY' });
+  }
+
+  if (!action || !emailBody) {
+    return res.status(400).json({ error: 'Missing action or emailBody' });
+  }
+
+  try {
+    let systemPrompt = '';
+    let userPrompt = '';
+
+    const emailContext = `EMAIL DETAILS:
+From: ${emailFrom || 'Unknown'}
+Subject: ${emailSubject || 'No subject'}
+Body: ${emailBody}`;
+
+    switch (action) {
+      case 'summarize':
+        systemPrompt = 'You are an expert email analyst. Extract key points and summarize emails concisely.';
+        userPrompt = `${emailContext}\n\nProvide a bullet-point summary of the key points, decisions, and action items in this email. Be concise (3-5 points max).`;
+        break;
+
+      case 'escalate':
+        systemPrompt = 'You are a priority assessment expert. Determine if emails need escalation and why.';
+        userPrompt = `${emailContext}\n\nAnalyze if this email requires immediate escalation. Respond with: ESCALATE YES/NO and a brief explanation of priority level and who should be notified.`;
+        break;
+
+      case 'infer':
+        systemPrompt = 'You are an inferential analyst. Determine what must happen based on email content.';
+        userPrompt = `${emailContext}\n\nWhat must happen next based on this email? What actions are implied but not explicit? Provide 2-3 key inferences.`;
+        break;
+
+      case 'intent':
+        systemPrompt = 'You are an intent analyzer. Determine what the sender is truly asking for.';
+        userPrompt = `${emailContext}\n\nWhat is the sender really asking for? Summarize their core intent in 1-2 sentences. Then list any implicit requests or concerns.`;
+        break;
+
+      case 'reply':
+        systemPrompt = 'You are a professional email writer. Draft direct, clear responses.';
+        userPrompt = `${emailContext}\n\nDraft a professional reply email. Be direct, concise, and professional. No bullet points. Keep it to 2-3 short paragraphs.`;
+        break;
+
+      case 'commit':
+        systemPrompt = 'You are an action item creator. Extract concrete, trackable action items.';
+        userPrompt = `${emailContext}\n\nCreate a list of specific, trackable action items from this email. Format each as: [PRIORITY] ACTION DESCRIPTION - OWNER (if implied). Include deadline if mentioned.`;
+        break;
+
+      default:
+        return res.status(400).json({ error: 'Unknown action: ' + action });
+    }
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-opus-4-1',
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }]
+      })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: (result.error && result.error.message) || `Anthropic API error: ${response.status}`
+      });
+    }
+
+    const content = result.content && result.content[0];
+    const text = content && content.type === 'text' ? content.text : 'No response';
+
+    return res.status(200).json({
+      success: true,
+      action,
+      result: text
+    });
+  } catch (e) {
+    console.error('Email action error:', e);
+    return res.status(500).json({ error: 'Failed to process email action: ' + e.message });
+  }
+});
+
 // Save Email Endpoint
 app.post('/api/save-email', async (req, res) => {
   const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kfkjagottniayrxayeav.supabase.co';

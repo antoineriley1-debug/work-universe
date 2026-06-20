@@ -1,7 +1,16 @@
-// Vercel Serverless Function for Email Ingest
-// Handler for POST requests from Cloudflare Worker
+// /api/inbound — Email ingest for Cloudflare Worker integration
+// Receives emails from universe@keraos.cc via Cloudflare Worker POST
+// Stores them in Supabase ingested_emails table
+//
+// Expected:
+//   Authorization header: "Bearer medstar-inbox-2026"
+//   Body: { from, to, subject, text, html }
+//
+// Env vars:
+//   SUPABASE_URL
+//   SUPABASE_SERVICE_ROLE_KEY
 
-import { createClient } from '@supabase/supabase-js';
+const { createClient } = require('@supabase/supabase-js');
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kfkjagottniayrxayeav.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtma2phZ290dG5pYXlyeGF5ZWF2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTQxMTAyOSwiZXhwIjoyMDk0OTg3MDI5fQ.gQqL_YcOD-DVLNdEiT_yE4EQGSL_OEAe03FTmQ2UxvI';
@@ -9,91 +18,54 @@ const EXPECTED_TOKEN = 'medstar-inbox-2026';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Parse JSON body from raw request
-async function parseBody(req) {
-  if (req.body instanceof Buffer) {
-    return JSON.parse(req.body.toString('utf8'));
-  }
-  if (typeof req.body === 'string') {
-    return JSON.parse(req.body);
-  }
-  if (typeof req.body === 'object') {
-    return req.body;
-  }
-  
-  // Try to collect chunks if streaming
-  return new Promise((resolve, reject) => {
-    let data = '';
-    req.on('data', chunk => {
-      data += chunk.toString();
-    });
-    req.on('end', () => {
-      try {
-        resolve(JSON.parse(data));
-      } catch (e) {
-        reject(new Error('Invalid JSON'));
-      }
-    });
-    req.on('error', reject);
-  });
-}
-
-export default async function handler(req, res) {
-  // Set CORS headers
+module.exports = async (req, res) => {
+  // Set headers
+  res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  
-  // Handle OPTIONS preflight
+
+  // Handle preflight
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    return res.end();
   }
 
-  // Only accept POST
+  // Only POST
   if (req.method !== 'POST') {
-    return res.status(405).json({ 
-      error: 'Method not allowed',
-      message: 'Use POST to ingest emails'
-    });
+    res.statusCode = 405;
+    return res.end(JSON.stringify({ error: 'Method not allowed. Use POST.' }));
   }
 
   try {
-    // Validate Authorization header
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log('[INBOUND] Missing auth header');
-      return res.status(401).json({ error: 'Missing Authorization header' });
+    // Parse body (Vercel provides pre-parsed req.body)
+    let body = req.body;
+    if (typeof body === 'string') {
+      body = JSON.parse(body);
+    }
+    if (!body || typeof body !== 'object') {
+      res.statusCode = 400;
+      return res.end(JSON.stringify({ error: 'Invalid body' }));
     }
 
+    // Validate authorization
+    const authHeader = req.headers.authorization || '';
     const token = authHeader.replace('Bearer ', '').trim();
     if (token !== EXPECTED_TOKEN) {
-      console.log('[INBOUND] Invalid token:', token.substring(0, 10) + '...');
-      return res.status(403).json({ error: 'Invalid token' });
+      res.statusCode = 401;
+      return res.end(JSON.stringify({ error: 'Unauthorized' }));
     }
 
-    // Parse body
-    let payload;
-    try {
-      payload = await parseBody(req);
-    } catch (e) {
-      console.log('[INBOUND] Parse error:', e.message);
-      return res.status(400).json({ error: 'Invalid JSON in request body' });
-    }
-
-    // Validate required fields
-    const { from, to, subject, text, html } = payload || {};
+    // Extract fields
+    const { from, to, subject, text, html } = body;
     if (!from || !to || !subject) {
-      console.log('[INBOUND] Missing fields. Got:', Object.keys(payload || {}));
-      return res.status(400).json({ 
+      res.statusCode = 400;
+      return res.end(JSON.stringify({ 
         error: 'Missing required fields',
-        required: ['from', 'to', 'subject'],
-        received: Object.keys(payload || {})
-      });
+        required: ['from', 'to', 'subject']
+      }));
     }
 
     // Insert into Supabase
-    console.log('[INBOUND] Inserting email from', from, 'subject:', subject);
-    
     const { data, error } = await supabase
       .from('ingested_emails')
       .insert([{
@@ -107,26 +79,28 @@ export default async function handler(req, res) {
       .select();
 
     if (error) {
-      console.error('[INBOUND] Supabase error:', error);
-      return res.status(500).json({
+      console.error('[INBOUND] DB error:', error.message);
+      res.statusCode = 500;
+      return res.end(JSON.stringify({
         error: 'Database error',
         details: error.message
-      });
+      }));
     }
 
-    console.log('[INBOUND] Success. Inserted ID:', data?.[0]?.id);
-    return res.status(200).json({
+    // Success
+    res.statusCode = 200;
+    return res.end(JSON.stringify({
       success: true,
-      message: 'Email ingested',
       email_id: data?.[0]?.id,
-      received_at: data?.[0]?.created_at
-    });
+      created_at: data?.[0]?.created_at
+    }));
 
-  } catch (error) {
-    console.error('[INBOUND] Unexpected error:', error);
-    return res.status(500).json({
-      error: 'Internal server error',
-      message: error.message
-    });
+  } catch (err) {
+    console.error('[INBOUND] Error:', err);
+    res.statusCode = 500;
+    return res.end(JSON.stringify({
+      error: 'Server error',
+      message: err.message
+    }));
   }
-}
+};

@@ -28,9 +28,19 @@ export default async function handler(req, res) {
     }
 
     // 2. Parse request body
-    const payload = req.body;
+    let payload = req.body;
+    
+    // If body is a string (JSON string), parse it
+    if (typeof payload === 'string') {
+      try {
+        payload = JSON.parse(payload);
+      } catch (e) {
+        return res.status(400).json({ error: 'Invalid JSON in body', details: e.message });
+      }
+    }
+    
     if (typeof payload !== 'object' || payload === null) {
-      return res.status(400).json({ error: 'Invalid JSON payload' });
+      return res.status(400).json({ error: 'Invalid JSON payload', received: typeof payload });
     }
 
     // 3. Validate required fields

@@ -52,7 +52,7 @@ module.exports = async (req, res) => {
 
     // Insert email
     const { data, error } = await supabase
-      .from('ingested_emails')
+      .from('emails')
       .insert([{
         from,
         to,

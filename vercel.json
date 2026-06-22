@@ -1,7 +1,11 @@
 {
+  "domains": ["keraos.cc", "work-universe.vercel.app"],
   "functions": {
     "api/anthropic.js": { "maxDuration": 60 },
-    "api/inbound.js": { "maxDuration": 30 }
+    "api/inbound.js": { "maxDuration": 30 },
+    "api/calendar.js": { "maxDuration": 30 },
+    "api/invoices.js": { "maxDuration": 30 },
+    "api/ai-brain.js": { "maxDuration": 60 }
   },
   "builds": [
     {
@@ -13,6 +17,12 @@
     {
       "src": "/(.*)",
       "dest": "server.js"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/ai-brain",
+      "schedule": "0 9 * * *"
     }
   ]
 }

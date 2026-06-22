@@ -244,7 +244,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
 .pipeline-flow{height:2px;background:repeating-linear-gradient(90deg,var(--cyan) 0 8px,transparent 8px 16px);opacity:.35;animation:pipeflow 1.2s linear infinite;margin:2px 4px 8px}
 @keyframes pipeflow{to{background-position:32px 0}}
 
-/* ================= HOSPITAL TILES / TJC WAR ROOM ================= */
+/* ================= HOSPITAL TILES / PROJECT RADAR ================= */
 .htile{position:relative;background:var(--glass);border:1px solid var(--stroke);padding:13px 14px;cursor:pointer;transition:all .18s var(--ease);clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px)}
 .htile:hover{border-color:var(--cyan);transform:translateY(-3px);box-shadow:0 16px 34px rgba(0,0,0,.5),0 0 18px rgba(86,214,232,.12)}
 .htile .hc{font-family:var(--mono);font-size:12.5px;font-weight:800;letter-spacing:.12em;color:var(--amber2);display:flex;align-items:center;gap:8px}
@@ -676,7 +676,7 @@ const ENT={
   action:{label:"Action Item",plural:"Action Items",color:"#f0c674",icon:"➤"},
   note:{label:"Note",plural:"Notes",color:"#6d7d8e",icon:"✎"},
   deficiency:{label:"Deficiency",plural:"Deficiencies",color:"#e4596b",icon:"✗"},
-  requirement:{label:"Compliance Item",plural:"Compliance Items",color:"#c9a0dc",icon:"☑"},
+  requirement:{label:"Delivery Item",plural:"Delivery Items",color:"#c9a0dc",icon:"☑"},
   evidence:{label:"Evidence",plural:"Evidence",color:"#9fd8c4",icon:"⊕"},
   calevent:{label:"Calendar Event",plural:"Calendar",color:"#6ea3cf",icon:"▦"},
   report:{label:"Report",plural:"Reports",color:"#b9c4d0",icon:"▥"}
@@ -731,12 +731,12 @@ function seed(){
   const acIntake=A("Collect PM load-leveling intake forms from all 10 directors",null,"Twiney","2026-06-15",{});link(acIntake.id,prPM.id,"project","seed");
   const acFSQ=A("Convert Franklin Square water-meter quote to PO",hFS.id,"Twiney","2026-06-19",{});link(acFSQ.id,prWM_fs.id,"project","seed");link(acFSQ.id,vSie.id,"vendor","seed");
   // Compliance categories as requirement templates per hospital (core utility/LS set)
-  const CATS=["Environment of Care","Life Safety","Utility Systems","Fire Protection","Fire Drills","Emergency Power","Medical Gas","Fire Alarm & Suppression","Water Management","Temp / Humidity & Critical Env","ILSM & Above-Ceiling","PM Evidence","AHJ / Permits","EOC Rounds & Committee"];
-  DB.meta.tjcCats=CATS;
-  const REQT=[["Emergency Power","Generator monthly load test","monthly"],["Emergency Power","Generator annual load-bank test","annual"],["Emergency Power","ATS monthly transfer test","monthly"],["Fire Drills","Fire drill — per shift per quarter","quarterly"],["Fire Alarm & Suppression","Fire alarm system inspection","annual"],["Fire Alarm & Suppression","Sprinkler inspection","quarterly"],["Fire Protection","Fire extinguisher inspection","monthly"],["Fire Protection","Smoke / fire damper testing","per cycle"],["Medical Gas","Medical gas system inspection","annual"],["Water Management","Water management program review","quarterly"],["Water Management","Legionella sampling / control evidence","per plan"],["Temp / Humidity & Critical Env","OR temp & humidity logs","monthly"],["Utility Systems","High-risk utility PM completion","monthly"],["ILSM & Above-Ceiling","Above-ceiling permit log current","ongoing"],["EOC Rounds & Committee","EOC rounds completed","quarterly"]];
+  const CATS=["Project Scope","Project","Utility Systems","Safety Systems","Fire Drills","Critical Systems","Utility Systems","Fire Alarm & Suppression","Infrastructure","Temp / Humidity & Critical Env","ILSM & Above-Ceiling","PM Evidence","AHJ / Permits","EOC Rounds & Committee"];
+  DB.meta.PROJECTCats=CATS;
+  const REQT=[["Critical Systems","Generator monthly load test","monthly"],["Critical Systems","Generator annual load-bank test","annual"],["Critical Systems","ATS monthly transfer test","monthly"],["Fire Drills","Fire drill — per shift per quarter","quarterly"],["Fire Alarm & Suppression","Fire alarm system inspection","annual"],["Fire Alarm & Suppression","Sprinkler inspection","quarterly"],["Safety Systems","Fire extinguisher inspection","monthly"],["Safety Systems","Smoke / fire damper testing","per cycle"],["Utility Systems","Utility Systems system inspection","annual"],["Infrastructure","Infrastructure program review","quarterly"],["Infrastructure","Legionella sampling / control evidence","per plan"],["Temp / Humidity & Critical Env","OR temp & humidity logs","monthly"],["Utility Systems","High-risk utility PM completion","monthly"],["ILSM & Above-Ceiling","Above-ceiling permit log current","ongoing"],["EOC Rounds & Committee","EOC rounds completed","quarterly"]];
   DB.hospitals.forEach(h=>{REQT.forEach(([cat,title,freq])=>{const q=addRec("requirement",{title,category:cat,freq,hospitalId:h.id,status:"Missing Evidence",stdRef:"",seeded:true},"seed");link(q.id,h.id,"site","seed")})});
   DB.meta.seeded=true;
-  audit("seed","note",null,"Seeded 10-hospital MedStar portfolio, vendors, live projects/risks/actions, TJC readiness framework","seed");
+  audit("seed","note",null,"Seeded 10-hospital MedStar portfolio, vendors, live projects/risks/actions, PROJECT readiness framework","seed");
 }
 
 /* ============================ SEARCH INDEX ============================ */
@@ -848,7 +848,7 @@ const EXTRACT_SPEC=`Return ONLY JSON, no markdown:
 "confidence":{"hospital":0-100,"vendor":0-100,"project":0-100},
 "urgency":1-5}`;
 async function extractFromContent(blocks,filename){
-  const sys=portfolioContext()+"\nYou extract structured operations intelligence from raw inputs (files, emails, notes) for a hospital facilities portfolio. Map hospital references to codes. Use synonyms: "+JSON.stringify(HOSP_SYN)+". Never invent data not present. "+EXTRACT_SPEC.replace("__CATS__",(DB.meta.tjcCats||[]).join(", "));
+  const sys=portfolioContext()+"\nYou extract structured operations intelligence from raw inputs (files, emails, notes) for a hospital facilities portfolio. Map hospital references to codes. Use synonyms: "+JSON.stringify(HOSP_SYN)+". Never invent data not present. "+EXTRACT_SPEC.replace("__CATS__",(DB.meta.PROJECTCats||[]).join(", "));
   const content=[{type:"text",text:sys+"\n\nINPUT ("+(filename||"pasted text")+"):"} , ...blocks];
   return AI.json([{role:"user",content}],{maxTokens:1000});
 }
@@ -936,7 +936,7 @@ function hHealth(h){let s=100;byHosp(DB.risks,h.id).filter(r=>r.status==="Open")
   s-=byHosp(DB.actions,h.id).filter(a=>a.status==="Open"&&isPast(a.due)).length*5;
   s-=byHosp(openWOs(),h.id).filter(w=>isPast(w.due)).length*5;
   s-=byHosp(openInvs(),h.id).filter(i=>isPast(i.dueDate)).length*3;
-  s-=Math.round((100-tjcScore(h.id))*0.12);return Math.max(4,Math.min(100,Math.round(s)))}
+  s-=Math.round((100-PROJECTScore(h.id))*0.12);return Math.max(4,Math.min(100,Math.round(s)))}
 function portfolioHealth(){return Math.round(DB.hospitals.reduce((s,h)=>s+hHealth(h),0)/Math.max(1,DB.hospitals.length))}
 function ringSVG(score,size=78,stroke=7,id=""){const r=(size-stroke)/2,c=2*Math.PI*r,off=c*(1-score/100);
   const col=score>=75?"var(--ok)":score>=50?"var(--amber)":"var(--crit)";
@@ -971,7 +971,7 @@ function agingHeatmap(hid){
   ${rows.map(r=>`<div class="heatrow"><span class="heatlbl">${esc(r.h.code)}</span>${r.cells.map(c=>{const id=reg+(k++);PIPE_REG[id]=[{label:r.h.code+" · "+c.b,items:c.items}];
     return `<div class="heatcell" style="${heatColor(c.amt,max)}" onclick="pipeDrill('${id}',0)" title="${fmt$(c.amt)}">${c.amt?Math.round(c.amt/1000)+"k":""}</div>`}).join("")}</div>`).join("")}</div>`}
 function complianceMatrix(){
-  const cats=DB.meta.tjcCats||[];let k=0;
+  const cats=DB.meta.PROJECTCats||[];let k=0;
   const data=DB.hospitals.map(h=>({h,cells:cats.map(c=>{const items=byHosp(DB.requirements,h.id).filter(q=>q.category===c&&!["Ready","Complete"].includes(q.status));return{c,items}})}));
   return `<div class="heat" style="--hc:${cats.length}"><div class="heatrow" style="grid-template-columns:64px repeat(${cats.length},1fr)"><span></span>${cats.map(c=>`<span class="heathead" title="${esc(c)}">${esc(c.split(" ")[0].slice(0,5))}</span>`).join("")}</div>
   ${data.map(r=>`<div class="heatrow" style="grid-template-columns:64px repeat(${cats.length},1fr)"><span class="heatlbl">${esc(r.h.code)}</span>${r.cells.map(c=>{const id="cm"+(k++);PIPE_REG[id]=[{label:r.h.code+" · "+c.c+" gaps",items:c.items}];
@@ -983,7 +983,7 @@ function riskRadarSVG(W=340){
     ...DB.requirements.filter(q=>["Overdue","Deficiency Open","Expired"].includes(q.status)).slice(0,14).map(r=>({r,sev:2,cat:2})),
     ...openInvs().filter(i=>isPast(i.dueDate)).map(r=>({r,sev:1,cat:3})),
     ...DB.projects.filter(p=>p.status==="Active"&&daysFrom(p.updatedAt)>14).map(r=>({r,sev:1,cat:4}))];
-  const cats=["RISK","ACTION","TJC","INVOICE","STALLED"];
+  const cats=["RISK","ACTION","PROJECT","INVOICE","STALLED"];
   const blips=items.slice(0,40).map((x,i)=>{const ang=(x.cat/cats.length)*2*Math.PI+((i%7)/7)*(2*Math.PI/cats.length)*.8-Math.PI/2;
     const rad=(W/2-18)*(1-(x.sev/3)*0.72)+8;const px=cx+rad*Math.cos(ang),py=cy+rad*Math.sin(ang);
     const col=x.sev>=3?"var(--crit)":x.sev===2?"var(--amber)":"var(--cyan)";
@@ -1033,7 +1033,7 @@ function uHover(hid,x,y){const h=rec(hid);if(!h)return;const el=$("#uhover");if(
         oi=byHosp(openInvs(),h.id),vd=vendorDelays().filter(x=>linked(x.v.id,"hospital").some(z=>z.id===h.id)).length;
   el.innerHTML=`<div class="panel tight rail-c"><div class="flexr"><b class="mono">${esc(h.code)}</b>${SETTINGS.pinned&&SETTINGS.pinned.includes(h.id)?'<span style="color:var(--amber)">★</span>':""}<span class="xs mut2 right">health ${hHealth(h)}</span></div>
   <div class="xs mut" style="margin:2px 0 7px">${esc(h.name)}</div>
-  <div class="xs" style="line-height:1.9">◧ ${pr} active projects<br>⚠ ${rk} open risks · ${od} overdue items<br>⌸ ${oi.length} open invoices (${fmt$(oi.reduce((s,i)=>s+(i.amount||0),0))})<br>☑ TJC ${tjcScore(h.id)}% · ⬡ ${vd} vendor delays</div></div>`;
+  <div class="xs" style="line-height:1.9">◧ ${pr} active projects<br>⚠ ${rk} open risks · ${od} overdue items<br>⌸ ${oi.length} open invoices (${fmt$(oi.reduce((s,i)=>s+(i.amount||0),0))})<br>☑ PROJECT ${PROJECTScore(h.id)}% · ⬡ ${vd} vendor delays</div></div>`;
   const wrap=$("#umap");el.style.left=Math.min(wrap.clientWidth-250,Math.max(8,x+34))+"px";el.style.top=Math.max(8,y-46)+"px";el.classList.add("on")}
 function uHoverOff(){const el=$("#uhover");if(el)el.classList.remove("on")}
 function uOpen(g,hid){if(motionOff()){go('#/e/hospital/'+hid);return}
@@ -1094,7 +1094,7 @@ Views.dashboard=()=>{
       <div id="umap"><svg id="umapsvg"></svg><div id="uhover"></div><div id="umapfoot"></div></div>
       <div class="grid" style="grid-template-columns:1fr 1.2fr;margin-top:13px">
         <div class="panel tight rail-r"><div class="panelhead"><span class="eyebrow" style="color:#f4a9b3">Risk Radar</span><span class="pid">RDR·01</span><span class="xs mut2 right">click a blip → chain</span></div><div id="radarbox">${riskRadarSVG(330)}</div></div>
-        <div class="panel tight"><div class="panelhead"><span class="eyebrow cy">Compliance Readiness Matrix</span><span class="pid">TJC·00</span><a class="xs right" href="#/tjc">war room →</a></div>${complianceMatrix()}</div>
+        <div class="panel tight"><div class="panelhead"><span class="eyebrow cy">Compliance Readiness Matrix</span><span class="pid">PROJECT·00</span><a class="xs right" href="#/PROJECT">war room →</a></div>${complianceMatrix()}</div>
       </div>
     </div>
     <div class="mcrail stagger">
@@ -1102,7 +1102,7 @@ Views.dashboard=()=>{
         <div class="metric ${odW.length?'crit':'info'}" onclick="go('#/workorders')"><div class="eyebrow">WO Overdue</div><div class="mv" data-count="${odW.length}">0</div><div class="ml">${oW.length} open</div></div>
         <div class="metric ${crit.length?'crit':'ok'}" onclick="go('#/risks')"><div class="eyebrow">Crit Risks</div><div class="mv" data-count="${crit.length}">0</div><div class="ml">${DB.risks.filter(r=>r.status==="Open").length} open</div></div>
         <div class="metric ${odA.length?'crit':'warn'}" onclick="go('#/actions')"><div class="eyebrow">Actions OD</div><div class="mv" data-count="${odA.length}">0</div><div class="ml">${oA.length} open</div></div>
-        <div class="metric warn" onclick="go('#/tjc')"><div class="eyebrow">TJC Gaps</div><div class="mv" data-count="${gaps.length}">0</div><div class="ml">${DB.hospitals.length} sites</div></div>
+        <div class="metric warn" onclick="go('#/PROJECT')"><div class="eyebrow">PROJECT Gaps</div><div class="mv" data-count="${gaps.length}">0</div><div class="ml">${DB.hospitals.length} sites</div></div>
       </div>
       <div class="panel tight"><div class="panelhead"><span class="eyebrow">Invoice Aging</span><span class="pid">INV·00</span><span class="mono xs right" style="color:var(--amber2)">${fmt$(oI.reduce((s,i)=>s+(i.amount||0),0))}</span></div>${agingHeatmap()}</div>
       <div class="panel tight"><div class="panelhead"><span class="eyebrow">Vendor Delays</span><span class="pid">VND·01</span></div>
@@ -1142,7 +1142,7 @@ Views.vendors=()=>listView("Vendors","vendor",DB.vendors,
   `<button class="btn" onclick="quickAdd('vendor')">＋ New Vendor</button>`);
 Views.hospitals=()=>`<div class="view"><div class="pghead"><div class="grow"><div class="eyebrow am">Sites</div><h1 class="pg">Hospital Command Nodes</h1></div></div>
   <div class="grid g3">${DB.hospitals.map(h=>{const s=hospSeverity(h);return `<div class="htile" onclick="go('#/e/hospital/${h.id}')"><div class="hc"><span class="led ${s==='ok'?'ok':s}"></span>${esc(h.code)}<span class="pin ${(SETTINGS.pinned||[]).includes(h.id)?'on':''}" onclick="togglePin('${h.id}',event)" title="Pin to dashboard">★</span></div><div class="hn">${esc(h.name)}</div>
-  <div class="hstats"><div class="hstat"><b>${byHosp(DB.projects,h.id).filter(p=>p.status==="Active").length}</b>projects</div><div class="hstat"><b>${byHosp(openWOs(),h.id).length}</b>WOs</div><div class="hstat"><b>${byHosp(openInvs(),h.id).length}</b>invoices</div><div class="hstat"><b>${byHosp(DB.requirements,h.id).filter(q=>!["Ready","Complete"].includes(q.status)).length}</b>TJC gaps</div></div></div>`}).join("")}</div></div>`;
+  <div class="hstats"><div class="hstat"><b>${byHosp(DB.projects,h.id).filter(p=>p.status==="Active").length}</b>projects</div><div class="hstat"><b>${byHosp(openWOs(),h.id).length}</b>WOs</div><div class="hstat"><b>${byHosp(openInvs(),h.id).length}</b>invoices</div><div class="hstat"><b>${byHosp(DB.requirements,h.id).filter(q=>!["Ready","Complete"].includes(q.status)).length}</b>PROJECT gaps</div></div></div>`}).join("")}</div></div>`;
 
 /* ---------- generic entity detail (drill-down everywhere) ---------- */
 Views.entity=(type,id)=>{
@@ -1186,18 +1186,18 @@ function hospitalTabs(h){
     <div class="metric info"><div class="eyebrow">Active Projects</div><div class="mv">${pr.filter(p=>p.status==="Active").length}</div></div>
     <div class="metric ${rk.filter(r=>r.status==="Open").length?'crit':'ok'}"><div class="eyebrow">Open Risks</div><div class="mv">${rk.filter(r=>r.status==="Open").length}</div></div>
     <div class="metric warn"><div class="eyebrow">Open Actions</div><div class="mv">${ac.filter(a=>a.status==="Open").length}</div></div>
-    <div class="metric info"><div class="eyebrow">TJC Readiness</div><div class="mv">${tjcScore(h.id)}%</div></div></div>
+    <div class="metric info"><div class="eyebrow">PROJECT Readiness</div><div class="mv">${PROJECTScore(h.id)}%</div></div></div>
     <div class="grid g2">
     <div class="panel tight"><div class="panelhead"><span class="eyebrow">Active Projects</span></div>${pr.filter(p=>p.status==="Active").map(p=>`<div style="padding:5px 0;border-bottom:1px solid var(--stroke)">${chip(p)} <span class="xs mut2">${esc((p.summary||"").slice(0,70))}</span></div>`).join("")||'<div class="empty">None.</div>'}</div>
     <div class="panel tight"><div class="panelhead"><span class="eyebrow">Open Risks & Actions</span></div>${[...rk.filter(r=>r.status==="Open"),...ac.filter(a=>a.status==="Open")].slice(0,8).map(x=>`<div class="flexr sm" style="padding:4px 0"><span class="led ${typeOf(x.id)==='risk'?sevClass(x.severity):isPast(x.due)?'crit':'warn'}"></span><a href="#/e/${typeOf(x.id)}/${x.id}">${esc(nameOf(x)).slice(0,60)}</a></div>`).join("")||'<div class="empty">Clean.</div>'}</div></div>`}
   if(tab==="workorders")body=woTable(wo);
   if(tab==="invoices")body=invHospTab(h,iv);
-  if(tab==="tjc")body=tjcHospBody(h);
+  if(tab==="PROJECT")body=PROJECTHospBody(h);
   if(tab==="docs")body=`<div class="panel tight">${dc.map(d=>`<div style="padding:6px 0;border-bottom:1px solid var(--stroke)">${chip(d)} <span class="xs mut2">${esc((d.summary||"").slice(0,90))}</span></div>`).join("")||'<div class="empty">No documents — drag files into Ingest.</div>'}</div>`;
   if(tab==="emails")body=`<div class="panel tight">${em.map(e=>`<div style="padding:6px 0;border-bottom:1px solid var(--stroke)">${chip(e)} <span class="xs mut2">urgency ${e.urgency||"—"} · ${esc((e.summary||"").slice(0,80))}</span></div>`).join("")||'<div class="empty">No emails ingested for this site.</div>'}</div>`;
   if(tab==="timeline"){const ids=new Set([h.id,...linked(h.id).map(x=>x.id)]);const evs=AUDIT.filter(e=>ids.has(e.entityId)).slice(-25).reverse();
     body=`<div class="panel"><div class="tline">${evs.map(e=>`<div class="tev ${e.src==='ai'?'am':''}"><div class="td">${fmtDT(e.at)}</div><div class="sm">${esc(e.action)} ${esc(e.entityType)} — ${esc((e.summary||"").slice(0,100))}</div></div>`).join("")||'<div class="empty">Quiet so far.</div>'}</div></div>`}
-  return `<div class="tabs">${T("overview","Overview")}${T("workorders","Work Orders ("+wo.length+")")}${T("invoices","Invoices ("+iv.length+")")}${T("tjc","TJC Compliance")}${T("docs","Documents ("+dc.length+")")}${T("emails","Emails ("+em.length+")")}${T("timeline","Timeline")}</div>${body}`;
+  return `<div class="tabs">${T("overview","Overview")}${T("workorders","Work Orders ("+wo.length+")")}${T("invoices","Invoices ("+iv.length+")")}${T("PROJECT","PROJECT Compliance")}${T("docs","Documents ("+dc.length+")")}${T("emails","Emails ("+em.length+")")}${T("timeline","Timeline")}</div>${body}`;
 }
 
 /* ============================ INGEST VIEW ============================ */
@@ -1410,10 +1410,10 @@ async function aiProjectSummary(id){
   }catch(err){box.innerHTML='<div class="empty">'+esc(err.message)+'</div>'}
 }
 
-/* ============================ TJC COMPLIANCE COMMAND CENTER ============================ */
-/* Aliases for search: Joint Commission, TJC, JCAHO, JCO, survey readiness, Life Safety,
-   Environment of Care, Physical Environment, compliance binder */
-function tjcScore(hid){const qs=byHosp(DB.requirements,hid);if(!qs.length)return 0;return Math.round(100*qs.filter(q=>["Ready","Complete"].includes(q.status)).length/qs.length)}
+/* ============================ PROJECT COMPLIANCE COMMAND CENTER ============================ */
+/* Aliases for search: Project Delivery, PROJECT, Delivery, JCO, project readiness, Project,
+   Project Scope, Physical Environment, compliance binder */
+function PROJECTScore(hid){const qs=byHosp(DB.requirements,hid);if(!qs.length)return 0;return Math.round(100*qs.filter(q=>["Ready","Complete"].includes(q.status)).length/qs.length)}
 function reqEvidence(q){return linked(q.id).filter(x=>["document","workorder","invoice","email"].includes(typeOf(x.id)))}
 function reqAutoStatus(q){
   if(["Deficiency Open","Corrective Action Pending","Complete"].includes(q.status))return q.status;
@@ -1422,29 +1422,29 @@ function reqAutoStatus(q){
   if(!reqEvidence(q).length)return"Missing Evidence";
   return q.status==="Ready"||q.verified?"Ready":"Needs Review";
 }
-function tjcHospBody(h){
+function PROJECTHospBody(h){
   const qs=byHosp(DB.requirements,h.id);qs.forEach(q=>{const s=reqAutoStatus(q);if(s!==q.status){q.status=s}});saveDB();
-  const cats=DB.meta.tjcCats||[];const dfs=byHosp(DB.deficiencies,h.id);
-  if(typeof TJCOPEN==="undefined")window.TJCOPEN=null;
-  const score=tjcScore(h.id);
+  const cats=DB.meta.PROJECTCats||[];const dfs=byHosp(DB.deficiencies,h.id);
+  if(typeof PROJECTOPEN==="undefined")window.PROJECTOPEN=null;
+  const score=PROJECTScore(h.id);
   const tiles=cats.map(c=>{const list=qs.filter(q=>q.category===c);if(!list.length)return"";
     const ready=list.filter(q=>["Ready","Complete"].includes(q.status)).length,pct=Math.round(100*ready/list.length);
     const worst=list.some(q=>["Deficiency Open","Overdue","Expired"].includes(q.status))?"crit":ready<list.length?"warn":"ok";
-    return `<div class="cattile ${TJCOPEN===c?"open":""}" onclick="TJCOPEN=TJCOPEN==='${esc(c)}'?null:'${esc(c)}';render()">
+    return `<div class="cattile ${PROJECTOPEN===c?"open":""}" onclick="PROJECTOPEN=PROJECTOPEN==='${esc(c)}'?null:'${esc(c)}';render()">
       <div class="flexr"><span class="led ${worst}"></span><b class="mono xs" style="letter-spacing:.06em">${esc(c).toUpperCase()}</b><span class="mono xs mut2 right">${ready}/${list.length}</span></div>
       <div class="catbar"><i style="width:${pct}%"></i></div></div>`}).join("");
-  const open=TJCOPEN?qs.filter(q=>q.category===TJCOPEN):[];
+  const open=PROJECTOPEN?qs.filter(q=>q.category===PROJECTOPEN):[];
   return `<div class="flexr" style="margin-bottom:13px">
     <div class="ringwrap panel tight heads-up" style="padding:10px 14px">${ringSVG(score,72,7)}<div class="ringlbl"><div class="rv" data-count="${score}">0</div><div class="rl">survey<br>readiness</div></div></div>
     <button class="btn primary" onclick="buildBinder('${h.id}')">⎙ Build Survey Binder</button>
     <button class="btn" onclick="quickAdd('requirement','${h.id}')">＋ Item</button>
     <button class="btn" onclick="quickAdd('deficiency','${h.id}')">＋ Deficiency</button>
     <span class="xs mut2">Readiness aid from your evidence — not an official standards interpretation.</span></div>
-  ${compPipeline(qs,"tjc_"+h.id)}
+  ${compPipeline(qs,"PROJECT_"+h.id)}
   ${dfs.filter(d=>d.status!=="Closed").length?`<div class="panel tight rail-r" style="margin:13px 0"><div class="panelhead"><span class="eyebrow" style="color:#f4a9b3">Open Deficiencies → Corrective Action Flow</span><span class="pid">DEF·01</span></div>
     ${dfs.filter(d=>d.status!=="Closed").map(d=>`<div class="feeditem"><span class="led crit"></span><a href="#/e/deficiency/${d.id}" style="flex:1">${esc(d.title)}</a><span class="xs mut2">${esc(d.capOwner?("CAP: "+d.capOwner):"no CAP owner")} · due ${fmtD(d.capDue)}</span></div>`).join("")}</div>`:""}
   <div class="grid g3" style="margin:13px 0">${tiles}</div>
-  ${TJCOPEN?`<div class="panel rail-a"><div class="panelhead"><span class="eyebrow am">${esc(TJCOPEN)}</span><span class="pid">CAT·${String(cats.indexOf(TJCOPEN)+1).padStart(2,"0")}</span><button class="btn sm right" onclick="TJCOPEN=null;render()">Collapse</button></div>
+  ${PROJECTOPEN?`<div class="panel rail-a"><div class="panelhead"><span class="eyebrow am">${esc(PROJECTOPEN)}</span><span class="pid">CAT·${String(cats.indexOf(PROJECTOPEN)+1).padStart(2,"0")}</span><button class="btn sm right" onclick="PROJECTOPEN=null;render()">Collapse</button></div>
     ${open.map(q=>{const ev=reqEvidence(q);
       return `<div style="padding:7px 0;border-bottom:1px solid var(--hair)"><div class="flexr">
         <a href="#/e/requirement/${q.id}" style="flex:1;color:var(--ink)"><b>${esc(q.title)}</b> <span class="xs mut2">· ${esc(q.freq||"")}</span>${q.stdRef?` <span class="tag">${esc(q.stdRef)}</span>`:""}</a>
@@ -1464,15 +1464,15 @@ function reqDetail(q){
     <div><div class="eyebrow" style="margin-bottom:4px">Verification</div><button class="btn sm ${q.verified?'':'primary'}" onclick="updRec('${q.id}',{verified:${q.verified?'false':'true'},verifiedAt:'${nowISO()}',status:'${q.verified?'Needs Review':'Ready'}'});render()">${q.verified?"✓ User-verified — revoke":"Mark user-verified"}</button></div>
   </div></div>`;
 }
-Views.tjc=()=>{
-  const id=ROUTE.id;if(id){const h=rec(id);if(!h)return `<div class="view"><div class="empty">Hospital not found.</div></div>`;return `<div class="view"><div class="pghead"><div class="grow"><div class="eyebrow am">TJC Compliance Command Center</div><h1 class="pg">${esc(h.code)} — Survey Readiness</h1></div><a class="btn" href="#/tjc">← Portfolio</a></div>${tjcHospBody(h)}</div>`}
+Views.PROJECT=()=>{
+  const id=ROUTE.id;if(id){const h=rec(id);if(!h)return `<div class="view"><div class="empty">Hospital not found.</div></div>`;return `<div class="view"><div class="pghead"><div class="grow"><div class="eyebrow am">PROJECT Compliance Command Center</div><h1 class="pg">${esc(h.code)} — project readiness</h1></div><a class="btn" href="#/PROJECT">← Portfolio</a></div>${PROJECTHospBody(h)}</div>`}
   const missing=DB.requirements.filter(q=>!["Ready","Complete"].includes(reqAutoStatus(q)));
-  return `<div class="view"><div class="pghead"><div class="grow"><div class="eyebrow am">TJC Compliance Command Center</div><h1 class="pg">Joint Commission Readiness · Portfolio</h1>
-    <div class="pgsub">Aka TJC · JCAHO · survey readiness · Life Safety · Environment of Care. Evidence-driven: every item links to real WOs, vendor reports, invoices, and documents with source traceability.</div></div></div>
-    <div class="grid g3" style="margin-bottom:14px">${DB.hospitals.map(h=>{const sc=tjcScore(h.id),gaps=byHosp(missing,h.id).length,dfs=byHosp(DB.deficiencies,h.id).filter(d=>d.status!=="Closed").length;
-      return `<div class="htile" onclick="go('#/tjc/${h.id}')"><div class="hc"><span class="led ${sc>=80?'ok':sc>=50?'warn':'crit'}"></span>${esc(h.code)}</div><div class="hn">${esc(h.name)}</div>
+  return `<div class="view"><div class="pghead"><div class="grow"><div class="eyebrow am">PROJECT Compliance Command Center</div><h1 class="pg">Project Delivery Readiness · Portfolio</h1>
+    <div class="pgsub">Aka PROJECT · Delivery · project readiness · Project · Project Scope. Evidence-driven: every item links to real WOs, vendor reports, invoices, and documents with source traceability.</div></div></div>
+    <div class="grid g3" style="margin-bottom:14px">${DB.hospitals.map(h=>{const sc=PROJECTScore(h.id),gaps=byHosp(missing,h.id).length,dfs=byHosp(DB.deficiencies,h.id).filter(d=>d.status!=="Closed").length;
+      return `<div class="htile" onclick="go('#/PROJECT/${h.id}')"><div class="hc"><span class="led ${sc>=80?'ok':sc>=50?'warn':'crit'}"></span>${esc(h.code)}</div><div class="hn">${esc(h.name)}</div>
       <div class="hstats"><div class="hstat"><b>${sc}%</b>ready</div><div class="hstat ${gaps?'w':''}"><b>${gaps}</b>gaps</div><div class="hstat ${dfs?'c':''}"><b>${dfs}</b>deficiencies</div></div></div>`}).join("")}</div>
-    <div class="panel tight" style="margin-bottom:14px"><div class="panelhead"><span class="eyebrow cy">Readiness Matrix · Hospital × Category</span><span class="pid">TJC·MX</span><span class="xs mut2 right">click any cell → gap list</span></div>${complianceMatrix()}</div>
+    <div class="panel tight" style="margin-bottom:14px"><div class="panelhead"><span class="eyebrow cy">Readiness Matrix · Hospital × Category</span><span class="pid">PROJECT·MX</span><span class="xs mut2 right">click any cell → gap list</span></div>${complianceMatrix()}</div>
     <div class="panel"><div class="panelhead"><span class="eyebrow am">Missing Evidence — Portfolio</span><span class="xs mut2 right">${missing.length} items</span></div>
     ${missing.slice(0,30).map(q=>{const h=hospOf(q.id);return `<div class="flexr sm" style="padding:5px 0;border-bottom:1px solid var(--stroke)"><span class="mono xs" style="width:62px;color:var(--amber2)">${h?esc(h.code):""}</span><a href="#/e/requirement/${q.id}" style="flex:1">${esc(q.title)}</a>${statBadge(q.status)}</div>`}).join("")||'<div class="empty">Every item has evidence. Strong position.</div>'}</div></div>`;
 };
@@ -1514,11 +1514,11 @@ function buildBinder(hid){
   const h=rec(hid);const qs=byHosp(DB.requirements,h.id);qs.forEach(q=>q.status=reqAutoStatus(q));
   const dfs=byHosp(DB.deficiencies,h.id),missing=qs.filter(q=>!["Ready","Complete"].includes(q.status));
   const docs=byHosp(DB.documents,h.id);
-  let html=repHead("Joint Commission Survey Readiness Binder",h);
-  html+=`<h2>Hospital Summary</h2><p>${esc(h.name)} survey readiness binder assembled from work orders, vendor reports, invoices, emails, and uploaded compliance documents in the Work Universe memory. ${qs.length} tracked compliance items, ${dfs.filter(d=>d.status!=="Closed").length} open deficiencies.</p>
-  <h2>Survey Readiness Score</h2><p style="font-size:24pt;margin:6pt 0"><b>${tjcScore(h.id)}%</b> &nbsp; (${qs.filter(q=>["Ready","Complete"].includes(q.status)).length} of ${qs.length} items evidence-ready)</p>
+  let html=repHead("Project Delivery project readiness Binder",h);
+  html+=`<h2>Hospital Summary</h2><p>${esc(h.name)} project readiness binder assembled from work orders, vendor reports, invoices, emails, and uploaded compliance documents in the Work Universe memory. ${qs.length} tracked Delivery Items, ${dfs.filter(d=>d.status!=="Closed").length} open deficiencies.</p>
+  <h2>project readiness Score</h2><p style="font-size:24pt;margin:6pt 0"><b>${PROJECTScore(h.id)}%</b> &nbsp; (${qs.filter(q=>["Ready","Complete"].includes(q.status)).length} of ${qs.length} items evidence-ready)</p>
   <h2>Open Risk Summary</h2>${byHosp(DB.risks,h.id).filter(r=>r.status==="Open").map(r=>`<p><b>${esc(r.severity.toUpperCase())}</b> — ${esc(r.title)}. ${esc(r.summary||"")}</p>`).join("")||"<p>No open risks recorded.</p>"}`;
-  (DB.meta.tjcCats||[]).forEach(c=>{const list=qs.filter(q=>q.category===c);if(!list.length)return;
+  (DB.meta.PROJECTCats||[]).forEach(c=>{const list=qs.filter(q=>q.category===c);if(!list.length)return;
     html+=`<h2 class="pb">${esc(c)}</h2><table><tr><th style="width:34%">Requirement</th><th>Status</th><th>Last / Next</th><th>Owner</th><th style="width:34%">Evidence & Source</th></tr>`;
     list.forEach(q=>{const ev=reqEvidence(q);
       html+=`<tr><td>${esc(q.title)}${q.stdRef?"<br><i>Ref: "+esc(q.stdRef)+"</i>":""}</td><td>${esc(q.status)}${q.verified?" (user-verified)":""}</td><td>${fmtD(q.lastDone)} / ${fmtD(q.nextDue)}</td><td>${esc(q.owner||"—")}</td><td>${ev.length?ev.map(x=>esc(nameOf(x))).join("; ")+"<br><span class='src'>"+esc(srcLine(q))+"</span>":"<b>MISSING EVIDENCE</b>"}</td></tr>`});
@@ -1529,7 +1529,7 @@ function buildBinder(hid){
   <h2 class="pb">Source Index</h2><table><tr><th>Document</th><th>Type</th><th>Ingested</th><th>Summary</th></tr>${docs.map(d=>`<tr><td>${esc(nameOf(d))}</td><td>${esc(d.docType||"")}</td><td>${fmtD(d.createdAt)}</td><td>${esc((d.summary||"").slice(0,120))}</td></tr>`).join("")||"<tr><td colspan='4'>No documents ingested yet.</td></tr>"}</table>
   <div class="sigline">Prepared by: ${esc(SETTINGS.preparedBy)}</div><div class="sigline">Reviewed / approved by (hospital compliance representative):</div>
   <div class="disc">${esc(DISCLAIMER)} Items marked AI-linked were connected automatically and should be confirmed during review.</div>`;
-  printDoc(html,"TJC Survey Binder — "+h.code);
+  printDoc(html,"PROJECT Survey Binder — "+h.code);
   audit("binder","hospital",h.id,"Survey binder generated","ai");toast("Binder built — print dialog opening. Saved to "+h.code+" timeline.","ok");
 }
 function printInvReport(hid,mode){
@@ -1584,7 +1584,7 @@ async function aiReport(kind){
 function printStatusReport(){
   let html=repHead("Hospital-by-Hospital Status Report",null);
   DB.hospitals.forEach(h=>{const pr=byHosp(DB.projects,h.id).filter(p=>p.status==="Active"),rk=byHosp(DB.risks,h.id).filter(r=>r.status==="Open"),ac=byHosp(DB.actions,h.id).filter(a=>a.status==="Open");
-    html+=`<h2>${esc(h.code)} — ${esc(h.name)}</h2><p>TJC readiness ${tjcScore(h.id)}%. ${pr.length} active projects, ${rk.length} open risks, ${ac.length} open actions.</p>
+    html+=`<h2>${esc(h.code)} — ${esc(h.name)}</h2><p>PROJECT readiness ${PROJECTScore(h.id)}%. ${pr.length} active projects, ${rk.length} open risks, ${ac.length} open actions.</p>
     ${pr.map(p=>`<p><b>${esc(p.title)}</b> (${esc(p.status)}). ${esc((p.summary||"").slice(0,220))} <span class="src">${esc(srcLine(p))}</span></p>`).join("")}
     ${rk.map(r=>`<p><i>Risk (${esc(r.severity)}):</i> ${esc(r.title)}.</p>`).join("")}`});
   html+=`<div class="sigline">Prepared by: ${esc(SETTINGS.preparedBy)}</div><div class="disc">${esc(DISCLAIMER)}</div>`;
@@ -1606,7 +1606,7 @@ function printActionReport(){
 function printComplianceRisk(){
   let html=repHead("Compliance Risk Report",null);
   DB.hospitals.forEach(h=>{const gaps=byHosp(DB.requirements,h.id).filter(q=>!["Ready","Complete"].includes(reqAutoStatus(q)));if(!gaps.length)return;
-    html+=`<h2>${esc(h.code)} — readiness ${tjcScore(h.id)}%</h2>${gaps.map(q=>`<p>${esc(q.title)} — <b>${esc(q.status)}</b>. ${esc(srcLine(q))}</p>`).join("")}`});
+    html+=`<h2>${esc(h.code)} — readiness ${PROJECTScore(h.id)}%</h2>${gaps.map(q=>`<p>${esc(q.title)} — <b>${esc(q.status)}</b>. ${esc(srcLine(q))}</p>`).join("")}`});
   html+=`<div class="sigline">Prepared by: ${esc(SETTINGS.preparedBy)}</div><div class="disc">${esc(DISCLAIMER)}</div>`;
   printDoc(html,"Compliance risk report");
 }
@@ -1769,7 +1769,7 @@ const FORMS={
 };
 function fieldHTML(k,kind,val){
   if(kind==="hospital")return `<select name="${k}"><option value="">— portfolio level —</option>${DB.hospitals.map(h=>`<option value="${h.id}" ${val===h.id?"selected":""}>${h.code} — ${esc(h.name)}</option>`).join("")}</select>`;
-  if(k==="category")return `<select name="${k}">${(DB.meta.tjcCats||[]).map(c=>`<option ${val===c?"selected":""}>${esc(c)}</option>`).join("")}</select>`;
+  if(k==="category")return `<select name="${k}">${(DB.meta.PROJECTCats||[]).map(c=>`<option ${val===c?"selected":""}>${esc(c)}</option>`).join("")}</select>`;
   if(Array.isArray(kind))return `<select name="${k}">${kind.map(o=>`<option ${val===o?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
   if(kind==="textarea")return `<textarea name="${k}">${esc(val||"")}</textarea>`;
   return `<input name="${k}" type="${kind==="date"?"date":kind==="number"?"number":"text"}" value="${esc(val??"")}">`;
@@ -1906,13 +1906,13 @@ async function resetAll(){for(const d of (DB.documents||[]).filter(x=>x.hasFile)
 let ROUTE={name:"dashboard"};
 const NAV=[["Command",[["dashboard","◈","Dashboard"],["hospitals","⬢","Hospitals"],["graph","✦","Knowledge Graph"],["brain","◎","AI Brain"]]],
   ["Operate",[["ingest","⇣","Ingest Data"],["projects","◧","Projects"],["workorders","⚙","Work Orders"],["invoices","⌸","Invoices"],["email","✉","Email Intel"],["risks","⚠","Risks"],["actions","➤","Actions"],["vendors","⬡","Vendors"]]],
-  ["Comply & Report",[["tjc","☑","TJC Compliance"],["calendar","▦","Calendar"],["reports","▥","Reports"],["settings","⚒","Settings"]]]];
+  ["Comply & Report",[["PROJECT","☑","PROJECT Compliance"],["calendar","▦","Calendar"],["reports","▥","Reports"],["settings","⚒","Settings"]]]];
 function navBadge(name){
   if(name==="actions")return DB.actions.filter(a=>a.status==="Open"&&isPast(a.due)).length;
   if(name==="workorders")return openWOs().filter(w=>isPast(w.due)).length;
   if(name==="invoices")return openInvs().filter(i=>isPast(i.dueDate)).length;
   if(name==="risks")return DB.risks.filter(r=>r.status==="Open"&&r.severity==="critical").length;
-  if(name==="tjc")return DB.deficiencies.filter(d=>d.status!=="Closed").length;return 0;
+  if(name==="PROJECT")return DB.deficiencies.filter(d=>d.status!=="Closed").length;return 0;
 }
 function renderNav(){
   $("#nav").innerHTML=NAV.map(([sec,items])=>`<div class="navsec">${sec}</div>`+items.map(([n,ic,l])=>{const b=navBadge(n);
@@ -1924,7 +1924,7 @@ function go(hash){closeNav();if(location.hash===hash)render();else location.hash
 function parseRoute(){
   const p=(location.hash||"#/dashboard").slice(2).split("/");
   if(p[0]==="e")ROUTE={name:"entity",type:p[1],id:p[2],tab:ROUTE.type===p[1]&&ROUTE.id===p[2]?ROUTE.tab:"overview"};
-  else if(p[0]==="tjc"&&p[1])ROUTE={name:"tjc",id:p[1]};
+  else if(p[0]==="PROJECT"&&p[1])ROUTE={name:"PROJECT",id:p[1]};
   else ROUTE={name:p[0]||"dashboard"};
 }
 function render(){
@@ -1969,3 +1969,4 @@ boot();
 </script>
 </body>
 </html>
+

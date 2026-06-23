@@ -256,7 +256,12 @@ app.post('/api/save-email', async (req, res) => {
       });
     }
 
-    const result = response.status === 201 ? await response.json() : { success: true };
+    // responseText was already read above; parse it instead of re-reading the body
+    // (calling response.json() here throws "Body has already been read").
+    let result = { success: true };
+    if (responseText) {
+      try { result = JSON.parse(responseText); } catch (_) { /* non-JSON body, keep default */ }
+    }
 
     return res.status(201).json({
       success: true,

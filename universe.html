@@ -1631,6 +1631,60 @@ function invoiceDetail(i){
 }
 
 /* ============================ EMAIL INTELLIGENCE ============================ */
+
+// ── Live inbox fetch from Supabase ingested_emails ───────────────────────────
+const INBOX_CFG = {
+  url: "https://kfkjagottniayrxayeav.supabase.co",
+  key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtma2phZ290dG5pYXlyeGF5ZWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk0MTEwMjksImV4cCI6MjA5NDk4NzAyOX0.OGQYNdzWTM51RRFintWgN7RUmUjpzC2YhLAxgRP25gA"
+};
+
+let _inboxLoading = false;
+let _inboxLoaded = false;
+
+async function fetchInboxEmails() {
+  if (_inboxLoading) return;
+  _inboxLoading = true;
+  try {
+    const r = await fetch(
+      INBOX_CFG.url + "/rest/v1/ingested_emails?order=created_at.desc&limit=100",
+      { headers: { apikey: INBOX_CFG.key, Authorization: "Bearer " + INBOX_CFG.key } }
+    );
+    if (!r.ok) { console.warn("[inbox] fetch failed:", r.status); return; }
+    const rows = await r.json();
+    if (!Array.isArray(rows)) return;
+
+    // Map Supabase rows → DB.emails format
+    const mapped = rows.map(row => ({
+      id: row.id,
+      subject: row.subject || "(no subject)",
+      from: row.from_address || row["from"] || "",
+      to: row.to_address || row["to"] || "",
+      body: row.body || row.text || row.html || "",
+      summary: "",
+      urgency: 1,
+      createdAt: row.created_at || row.received_at || new Date().toISOString(),
+      hospitalId: null,
+      seeded: false,
+      _fromSupabase: true,
+    }));
+
+    // Merge into DB.emails — avoid duplicates by id
+    const existingIds = new Set((DB.emails || []).map(e => e.id));
+    const newEmails = mapped.filter(e => !existingIds.has(e.id));
+    if (newEmails.length > 0) {
+      DB.emails = [...newEmails, ...(DB.emails || [])];
+    }
+
+    _inboxLoaded = true;
+    // Re-render if currently on email view
+    if (ROUTE.name === "email") render();
+  } catch(e) {
+    console.warn("[inbox] error:", e.message);
+  } finally {
+    _inboxLoading = false;
+  }
+}
+// ── END inbox fetch ───────────────────────────────────────────────────────────
 Views.email=()=>`<div class="view"><div class="pghead"><div class="grow"><div class="eyebrow am">Email Intelligence</div><h1 class="pg">Inbox Brain</h1>
   <div class="pgsub">Paste any email in Ingest with "treat as email" checked — it lands here linked to hospital, project, vendor, people, and timeline. Use AI actions to analyze, summarize, and escalate.</div></div></div>
   <div class="panel"><table class="tbl"><thead><tr><th>Subject</th><th>From</th><th>Hospital</th><th>Urgency</th><th>Summary</th><th>Actions</th></tr></thead><tbody>
@@ -2235,6 +2289,7 @@ function postRender(){
   updateBeacon();countUps();animateRings();
   if(ROUTE.name==="dashboard"){drawUMap();drawHorizon()}
   if(ROUTE.name==="map"){setTimeout(()=>opsMapInit("ops-map-container"),50)}
+  if(ROUTE.name==="email"){fetchInboxEmails();}
   if(ROUTE.name==="ingest"){
     const dz=$("#dropzone"),fi=$("#filein");if(dz){
     dz.onclick=()=>fi.click();fi.onchange=()=>ingestFiles([...fi.files]);

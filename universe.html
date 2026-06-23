@@ -445,13 +445,29 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{animation:none
   #printdock .sigline{margin-top:28pt;border-top:1pt solid #333;width:60%;padding-top:3pt;font-size:10pt}
   #printdock .disc{margin-top:14pt;font-size:9pt;color:#333;border:1pt solid #888;padding:6pt}
 }
+
+/* Sidebar collapse */
+#shell.nav-collapsed{grid-template-columns:0px 1fr}
+#shell.nav-collapsed #nav{width:0;overflow:hidden;padding:0;min-width:0;border-right:none}
+#shell.nav-collapsed #navveil{display:none!important}
+#navcollapse{background:none;border:none;color:var(--ink2);cursor:pointer;padding:5px 8px;border-radius:5px;font-size:13px;display:flex;align-items:center;gap:6px;transition:color .14s;font-family:var(--mono);letter-spacing:.04em;font-size:11px}
+#navcollapse:hover{color:var(--cyan2);background:rgba(255,255,255,.04)}
+#navcollapse svg{transition:transform .25s var(--ease)}
+#shell.nav-collapsed #navcollapse svg{transform:rotate(180deg)}
+
 </style>
 </head>
 <body>
 <div id="shell">
   <div id="topbar">
     <button id="menubtn" onclick="toggleNav()">☰</button>
-    <div id="brand"><span class="mark"></span><span><span class="sig">UNIVERSE<b>·OS</b></span><span class="sub">MedStar 10-Site Command</span></span></div>
+    <button id="navcollapse" onclick="toggleSidebarCollapse()" title="Toggle sidebar">
+  <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="1" y="1" width="13" height="13" rx="2"/>
+    <line x1="5" y1="1" x2="5" y2="14"/>
+  </svg>
+</button>
+<div id="brand"><span class="mark"></span><span><span class="sig">UNIVERSE<b>·OS</b></span><span class="sub">MedStar 10-Site Command</span></span></div>
     <div id="sysline"><span id="clock">--:--:--</span><span id="cloudchip"></span><span id="alertbeacon" title="Open attention queue"><span class="led idle" id="beaconled"></span><span id="beacontxt">scanning</span></span></div>
     <div id="gsearch"><span class="ico">⌖</span><input id="gsearchinput" placeholder="Command search — find or ask anything…" readonly><kbd>CTRL K</kbd></div>
     <div id="topbtns">
@@ -1369,6 +1385,287 @@ async function opsMapSendKera() {
 // ═══════════════════════════════════════════════════════
 // END OPERATIONS MAP VIEW
 // ═══════════════════════════════════════════════════════
+
+Views.help=()=>{return `
+<div class="view">
+<div class="pghead"><div class="grow">
+  <div class="eyebrow am">Work Universe OS</div>
+  <h1 class="pg">Tips, Tricks & Full Capabilities</h1>
+  <div class="pgsub">Everything this system can do — don't hold back.</div>
+</div></div>
+
+<style>
+.tip-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;margin-bottom:24px}
+.tip-card{background:var(--glass);border:1px solid var(--stroke2);border-radius:6px;padding:18px 20px}
+.tip-card h3{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber2);margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.tip-card ul{margin:0;padding:0 0 0 14px;color:var(--ink2);font-size:12.5px;line-height:1.8}
+.tip-card ul li{margin-bottom:2px}
+.tip-card code{background:rgba(255,255,255,.07);border:1px solid var(--stroke2);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:11px;color:var(--cyan2)}
+.tip-section{font-family:var(--mono);font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink3);margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--stroke)}
+.shortcut-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-bottom:24px}
+.shortcut{background:var(--glass);border:1px solid var(--stroke);border-radius:4px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.shortcut .key{font-family:var(--mono);font-size:11px;color:var(--amber2);background:rgba(232,163,61,.12);border:1px solid rgba(232,163,61,.25);padding:2px 7px;border-radius:3px;white-space:nowrap}
+.shortcut .desc{font-size:12px;color:var(--ink2)}
+.cmd-ex{background:rgba(86,214,232,.07);border:1px solid rgba(86,214,232,.2);border-radius:4px;padding:8px 12px;font-family:var(--mono);font-size:12px;color:var(--cyan2);margin-bottom:6px;cursor:pointer;transition:background .14s}
+.cmd-ex:hover{background:rgba(86,214,232,.14)}
+.cmd-ex::before{content:">";color:var(--amber);margin-right:8px}
+</style>
+
+<div class="tip-section">Keyboard Shortcuts</div>
+<div class="shortcut-grid">
+  <div class="shortcut"><span class="desc">Command Palette</span><span class="key">Cmd/Ctrl + K</span></div>
+  <div class="shortcut"><span class="desc">Close drawer/modal</span><span class="key">Esc</span></div>
+  <div class="shortcut"><span class="desc">Toggle sidebar</span><span class="key">Click ▣ icon</span></div>
+  <div class="shortcut"><span class="desc">Voice command</span><span class="key">Mic button</span></div>
+  <div class="shortcut"><span class="desc">Quick briefing</span><span class="key">Briefing button</span></div>
+  <div class="shortcut"><span class="desc">Global search</span><span class="key">Search bar</span></div>
+</div>
+
+<div class="tip-section">Talking to Kera — AI Commands That Work</div>
+<div style="margin-bottom:24px">
+  <p style="color:var(--ink2);font-size:13px;margin-bottom:12px;line-height:1.7">Type naturally in the Terminal. Kera reads your full context — sites, projects, hospitals, vendors, calendar, emails. She doesn't need formal commands.</p>
+  <div class="tip-grid">
+    <div class="tip-card">
+      <h3>Projects & Status</h3>
+      <div class="cmd-ex">Mark the MWHC BAS project complete</div>
+      <div class="cmd-ex">What projects are overdue?</div>
+      <div class="cmd-ex">Create a new project for summer cooling readiness</div>
+      <div class="cmd-ex">Show me everything stalled across all sites</div>
+      <div class="cmd-ex">Close out the Limbach BAS work — done Friday</div>
+    </div>
+    <div class="tip-card">
+      <h3>Site & Hospital Intel</h3>
+      <div class="cmd-ex">What's the status at Georgetown?</div>
+      <div class="cmd-ex">Which sites have open work orders?</div>
+      <div class="cmd-ex">Update MWHC — boilers offline for PM this week</div>
+      <div class="cmd-ex">Show me a risk summary for Southern Maryland</div>
+      <div class="cmd-ex">What vendors are active at Franklin Square?</div>
+    </div>
+    <div class="tip-card">
+      <h3>Email Intelligence</h3>
+      <div class="cmd-ex">Summarize the last email from Powercor</div>
+      <div class="cmd-ex">Which emails need a response?</div>
+      <div class="cmd-ex">What did Bob say about the chiller scope?</div>
+      <div class="cmd-ex">Draft a reply to the Siemens proposal</div>
+      <div class="cmd-ex">Flag the invoice email as urgent</div>
+    </div>
+    <div class="tip-card">
+      <h3>Operations Map</h3>
+      <div class="cmd-ex">Show me the Baltimore sites</div>
+      <div class="cmd-ex">Which hospitals have overdue projects?</div>
+      <div class="cmd-ex">Take me to Washington Hospital Center</div>
+      <div class="cmd-ex">Highlight all sites with at-risk status</div>
+      <div class="cmd-ex">Show DC sites only</div>
+    </div>
+    <div class="tip-card">
+      <h3>Calendar & Scheduling</h3>
+      <div class="cmd-ex">What's on the calendar this week?</div>
+      <div class="cmd-ex">Add a PM inspection at MUMH for July 10</div>
+      <div class="cmd-ex">Show me upcoming compliance deadlines</div>
+      <div class="cmd-ex">When is the next Powercor site visit?</div>
+    </div>
+    <div class="tip-card">
+      <h3>Invoices & Vendors</h3>
+      <div class="cmd-ex">What invoices are past due?</div>
+      <div class="cmd-ex">Show me everything owed to Powercor</div>
+      <div class="cmd-ex">What's the total outstanding across all vendors?</div>
+      <div class="cmd-ex">Who is the Nalco rep for Harbor Hospital?</div>
+    </div>
+    <div class="tip-card">
+      <h3>Memory & Notes</h3>
+      <div class="cmd-ex">Remember: BAS contract with Limbach expires Dec 2026</div>
+      <div class="cmd-ex">Save this for later: MWHC chillers need inspection Q3</div>
+      <div class="cmd-ex">What do you remember about the cooling tower at MSMH?</div>
+      <div class="cmd-ex">Add a note: Siemens gave 10% discount if signed by EOQ</div>
+    </div>
+    <div class="tip-card">
+      <h3>Reporting & Briefing</h3>
+      <div class="cmd-ex">Give me a full portfolio briefing</div>
+      <div class="cmd-ex">What needs my attention today?</div>
+      <div class="cmd-ex">Summarize last week's activity</div>
+      <div class="cmd-ex">What's the biggest risk right now?</div>
+      <div class="cmd-ex">Who owes me something?</div>
+    </div>
+  </div>
+</div>
+
+<div class="tip-section">Views & What They Do</div>
+<div class="tip-grid" style="margin-bottom:24px">
+  <div class="tip-card">
+    <h3>Dashboard</h3>
+    <ul>
+      <li>Portfolio health across all 10 sites at a glance</li>
+      <li>Live project matrix with overdue flags</li>
+      <li>Attention queue — what needs you most</li>
+      <li>Knowledge graph shows relationships between entities</li>
+      <li>Horizon chart shows activity over time</li>
+    </ul>
+  </div>
+  <div class="tip-card">
+    <h3>Operations Map</h3>
+    <ul>
+      <li>Live map of all 10 MedStar hospitals</li>
+      <li>Markers colored by portfolio health (green/amber/red)</li>
+      <li>Click any site → details, open projects, status</li>
+      <li>Ask Kera to control the map with plain English</li>
+      <li>Requires Mapbox token (free at mapbox.com)</li>
+    </ul>
+  </div>
+  <div class="tip-card">
+    <h3>Hospitals (Sites)</h3>
+    <ul>
+      <li>Deep profile per hospital: equipment, vendors, BAS, credentials</li>
+      <li>Paste a filled-out form or photo — Kera auto-fills the profile</li>
+      <li>Track temporary equipment (rental boilers, chillers)</li>
+      <li>Add notes, open items, and PM schedules per site</li>
+    </ul>
+  </div>
+  <div class="tip-card">
+    <h3>Email Intel</h3>
+    <ul>
+      <li>Live inbox from <code>universe@keraos.cc</code></li>
+      <li>Auto-fetches every time you open this view</li>
+      <li>AI actions: Summarize, Escalate, Infer, Intent, Reply, Commit</li>
+      <li>Emails get linked to hospitals, projects, vendors automatically</li>
+      <li>Paste emails manually via Ingest → treat as email</li>
+    </ul>
+  </div>
+  <div class="tip-card">
+    <h3>Projects</h3>
+    <ul>
+      <li>Track every active project scoped to a site</li>
+      <li>Statuses: Active, Stalled, Blocked, Complete, Overdue</li>
+      <li>Link projects to notes, people, vendors, documents</li>
+      <li>Tell Kera to close/update/create projects in plain English</li>
+      <li>Timeline view shows activity history per project</li>
+    </ul>
+  </div>
+  <div class="tip-card">
+    <h3>AI Brain</h3>
+    <ul>
+      <li>Daily cross-reference of calendar + invoices + emails</li>
+      <li>Auto-flags overdue deliverables, missing payments, anomalies</li>
+      <li>Runs automatically — check the alerts it generates</li>
+      <li>Can be triggered manually for a fresh analysis</li>
+    </ul>
+  </div>
+  <div class="tip-card">
+    <h3>Terminal (Kera)</h3>
+    <ul>
+      <li>Direct conversation with Kera — your AI Chief of Staff</li>
+      <li>Full context: all sites, projects, emails, vendors, people</li>
+      <li>Ask anything. She knows your portfolio deeply.</li>
+      <li>Voice mode available — click the mic or orb</li>
+      <li>She can navigate the app: "Take me to Georgetown"</li>
+    </ul>
+  </div>
+  <div class="tip-card">
+    <h3>Memory & Notes</h3>
+    <ul>
+      <li>Memory: what you want Kera to always remember</li>
+      <li>Notes: raw thoughts, brain dumps, meeting notes</li>
+      <li>Tell Kera to "read my latest note and act on it"</li>
+      <li>Memory persists across all sessions forever</li>
+    </ul>
+  </div>
+</div>
+
+<div class="tip-section">Power User Tips</div>
+<div class="tip-grid" style="margin-bottom:24px">
+  <div class="tip-card">
+    <h3>Sidebar Toggle</h3>
+    <ul>
+      <li>Click the <code>▣</code> icon in the top-left to collapse/expand</li>
+      <li>Collapses to full-width main area — great for focus mode</li>
+      <li>Preference is saved — stays collapsed on reload</li>
+      <li>On mobile: hamburger button opens the drawer</li>
+    </ul>
+  </div>
+  <div class="tip-card">
+    <h3>Command Palette</h3>
+    <ul>
+      <li>Press <code>Cmd/Ctrl + K</code> anywhere to open</li>
+      <li>Jump to any view instantly without touching the sidebar</li>
+      <li>Search across the entire app</li>
+      <li>Type partial names — it fuzzy matches</li>
+    </ul>
+  </div>
+  <div class="tip-card">
+    <h3>Ingest Data</h3>
+    <ul>
+      <li>Paste <b>any</b> text — Kera figures out what it is</li>
+      <li>Paste an email → check "treat as email" → it links itself</li>
+      <li>Paste an invoice, report, meeting notes, or work order</li>
+      <li>Supports CSV upload for bulk data</li>
+      <li>Take a photo of a handwritten form → Kera reads it</li>
+    </ul>
+  </div>
+  <div class="tip-card">
+    <h3>Voice Mode</h3>
+    <ul>
+      <li>Click the orb (bottom right) or the mic button</li>
+      <li>Speak naturally — same as typing to Kera</li>
+      <li>Responses can be spoken back if TTS is enabled</li>
+      <li>Great for hands-free use in the field</li>
+    </ul>
+  </div>
+  <div class="tip-card">
+    <h3>Cloud Sync</h3>
+    <ul>
+      <li>Settings → Cloud Sync to connect your Supabase account</li>
+      <li>All data syncs across devices when connected</li>
+      <li>Without cloud sync: data lives in this browser only</li>
+      <li>Export anytime from Settings</li>
+    </ul>
+  </div>
+  <div class="tip-card">
+    <h3>Close Out Projects Fast</h3>
+    <ul>
+      <li>Just tell Kera: <code>"X project is done"</code></li>
+      <li>Dump a brain dump in Notes, then say: <code>"read latest note and update projects"</code></li>
+      <li>She'll close, update, flag — then log it to Audit</li>
+      <li>Everything is timestamped and auditable</li>
+    </ul>
+  </div>
+  <div class="tip-card">
+    <h3>Dark / Light Mode</h3>
+    <ul>
+      <li>Settings → Theme to customize colors</li>
+      <li>Multiple presets: Operations Dark, Bloomberg Amber, etc.</li>
+      <li>Custom color overrides for any token</li>
+      <li>Preference saved locally per device</li>
+    </ul>
+  </div>
+  <div class="tip-card">
+    <h3>The Orb</h3>
+    <ul>
+      <li>That pulsing icon (bottom right) is Kera's shortcut</li>
+      <li>Click it to open a quick chat bubble without switching views</li>
+      <li>Stays visible on every page — always one tap away</li>
+      <li>Orb changes color based on Kera's state (thinking/idle/alert)</li>
+    </ul>
+  </div>
+</div>
+
+<div class="tip-section">What Kera Knows About You</div>
+<div style="background:var(--glass);border:1px solid var(--stroke2);border-radius:6px;padding:18px 20px;margin-bottom:24px;color:var(--ink2);font-size:13px;line-height:1.9">
+  Kera is Antoine's personal AI Chief of Staff. She knows:
+  <ul style="margin:10px 0 0;padding-left:18px;line-height:2">
+    <li>Your full 10-hospital MedStar portfolio (MWHC, MGUH, MNRH, MUMH, MHH, MGSH, MSMHC, MSMH, MMMC, MFSHC)</li>
+    <li>Every site profile — equipment, vendors, BAS systems, open items, notes</li>
+    <li>All active projects, their status, and who's accountable</li>
+    <li>Your vendor roster: Limbach, Siemens, Powercor, ABM, BGE and more</li>
+    <li>Your email inbox (live from universe@keraos.cc)</li>
+    <li>Every invoice, work order, risk, and action on file</li>
+    <li>Your calendar and upcoming compliance deadlines</li>
+    <li>Your personal Memory entries — things you've explicitly told her to remember</li>
+    <li>The full audit trail of everything that's happened in this system</li>
+  </ul>
+  <p style="margin-top:12px;color:var(--ink3);font-size:12px">She does NOT know what you haven't told her. The more you feed in (emails, notes, project updates), the smarter she gets about your specific situation.</p>
+</div>
+
+</div>
+`};
 Views.dashboard=()=>{
   const recs=recsEngine(),oA=DB.actions.filter(a=>a.status==="Open"),oW=openWOs(),oI=openInvs(),
     odA=oA.filter(a=>isPast(a.due)),odW=oW.filter(w=>isPast(w.due)),odI=oI.filter(i=>isPast(i.dueDate)),
@@ -2260,7 +2557,7 @@ async function resetAll(){for(const d of (DB.documents||[]).filter(x=>x.hasFile)
 let ROUTE={name:"dashboard"};
 const NAV=[["Command",[["dashboard","◈","Dashboard"],["map","▦","Operations Map"],["hospitals","⬢","Hospitals"],["graph","✦","Knowledge Graph"],["brain","◎","AI Brain"]]],
   ["Operate",[["ingest","⇣","Ingest Data"],["projects","◧","Projects"],["workorders","⚙","Work Orders"],["invoices","⌸","Invoices"],["email","✉","Email Intel"],["risks","⚠","Risks"],["actions","➤","Actions"],["vendors","⬡","Vendors"]]],
-  ["Comply & Report",[["PROJECT","☑","PROJECT Compliance"],["calendar","▦","Calendar"],["reports","▥","Reports"],["settings","⚒","Settings"]]]];
+  ["Learn",[["help","?","Tips & How-To"]]],["Comply & Report",[["PROJECT","☑","PROJECT Compliance"],["calendar","▦","Calendar"],["reports","▥","Reports"],["settings","⚒","Settings"]]]];
 function navBadge(name){
   if(name==="actions")return DB.actions.filter(a=>a.status==="Open"&&isPast(a.due)).length;
   if(name==="workorders")return openWOs().filter(w=>isPast(w.due)).length;

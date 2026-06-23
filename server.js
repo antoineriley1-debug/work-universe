@@ -191,6 +191,8 @@ app.post('/api/save-email', async (req, res) => {
   const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kfkjagottniayrxayeav.supabase.co';
   const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtma2phZ290dG5pYXlyeGF5ZWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk0MTEwMjksImV4cCI6MjA5NDk4NzAyOX0.OGQYNdzWTM51RRFintWgN7RUmUjpzC2YhLAxgRP25gA';
 
+  const WORKSPACE_KEY = process.env.WORKSPACE_KEY || 'twiney-execos-mGJ7Yk9Lp2RnDqW8sZ4eXbHvC3FaTu6N';
+
   const { emailId, hospitalId, subject, from, summary, body } = req.body;
 
   if (!emailId || !hospitalId) {
@@ -199,14 +201,30 @@ app.post('/api/save-email', async (req, res) => {
     });
   }
 
+  // The ingested_emails table stores email_id/hospital_id as Postgres uuid columns.
+  // The app's internal record ids (e.g. "em-test-001", "hosp-mwhc") are NOT uuids,
+  // so inserting them into the uuid columns causes Postgres error 22P02 -> HTTP 400.
+  // Fix: only place a value in the uuid columns when it is a valid uuid; otherwise
+  // store the app id in the text columns (hospital_code / message_id) so the
+  // association is preserved and the insert succeeds.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const isUuid = (v) => typeof v === 'string' && UUID_RE.test(v.trim());
+
   try {
     const emailData = {
-      email_id: emailId,
-      hospital_id: hospitalId,
+      // workspace_key is NOT NULL in the schema; omitting it caused 23502 errors.
+      workspace_key: WORKSPACE_KEY,
+      // Route ids to the correct column based on type.
+      email_id: isUuid(emailId) ? emailId : null,
+      hospital_id: isUuid(hospitalId) ? hospitalId : null,
+      // Always keep the app's string identifiers in text columns for the association.
+      hospital_code: hospitalId,
+      message_id: emailId,
       subject: subject || '',
       from_address: from || '',
       summary: summary || '',
       body: body ? body.substring(0, 50000) : '',
+      status: 'saved',
       saved_at: new Date().toISOString(),
     };
 
@@ -229,20 +247,9 @@ app.post('/api/save-email', async (req, res) => {
     console.log(`Supabase response: ${response.status}`, responseText);
 
     if (!response.ok) {
-      // If table doesn't exist, create it first
-      if (response.status === 400 || response.status === 404 || responseText.includes('relation') || responseText.includes('does not exist')) {
-        console.log('Table may not exist, attempting to create it...');
-        // Try to create the table via a simple insert that will create the table
-        // For now, just inform the user
-        return res.status(400).json({
-          success: false,
-          message: 'Supabase table needs to be initialized. Please ensure the ingested_emails table exists.',
-          error: responseText,
-          note: 'Run the migration script or contact your database administrator'
-        });
-      }
-
-      return res.status(response.status).json({
+      // Surface the real Supabase error instead of masking it as a generic 400.
+      console.error(`[save-email] Supabase ${response.status}: ${responseText}`);
+      return res.status(response.status === 404 ? 500 : response.status).json({
         success: false,
         message: 'Failed to save email association to Supabase',
         error: responseText,

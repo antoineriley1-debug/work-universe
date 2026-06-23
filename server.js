@@ -270,27 +270,27 @@ app.post('/api/save-email', async (req, res) => {
 app.post('/api/inbound', async (req, res) => {
   const INBOUND_SECRET = process.env.INBOUND_SECRET || 'medstar-inbox-2026';
   const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || 'https://kfkjagottniayrxayeav.supabase.co';
-  const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+  // Always use anon key — service role key is invalid; anon key + RLS insert policy handles auth
+  const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtma2phZ290dG5pYXlyeGF5ZWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk0MTEwMjksImV4cCI6MjA5NDk4NzAyOX0.OGQYNdzWTM51RRFintWgN7RUmUjpzC2YhLAxgRP25gA';
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   const authHeader = req.headers.authorization || '';
-  const [scheme, credentials] = authHeader.split(' ');
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
 
-  if (scheme !== 'Bearer' || credentials !== INBOUND_SECRET) {
+  if (token !== INBOUND_SECRET) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
   const { from, to, subject, text, html } = req.body;
 
-  // Make 'to' optional since it might come from the Cloudflare Worker
-  if (!from || !subject || !text) {
-    return res.status(400).json({
-      error: 'Missing required fields: from, subject, text'
-    });
+  if (!from || !subject) {
+    return res.status(400).json({ error: 'Missing required fields: from, subject' });
   }
+
+  console.log(`[INBOUND] Storing email from=${from} subject="${subject}"`);
 
   try {
     const response = await fetch(
@@ -299,48 +299,37 @@ app.post('/api/inbound', async (req, res) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': SUPABASE_SERVICE_KEY,
-          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
+          'Prefer': 'return=minimal',
         },
+        // Use actual column names from schema: from_address, to_address, subject, body
         body: JSON.stringify({
-          from,
-          to: to || null,
+          from_address: from,
+          to_address: to || null,
           subject,
-          text_body: text,
-          html_body: html || null,
-          received_at: new Date().toISOString(),
+          body: text || html || null,
         }),
       }
     );
 
     if (!response.ok) {
-      const error = await response.text();
-      console.error(`Supabase error: ${response.status}`, error);
-
-      return res.status(response.status).json({
+      const errText = await response.text();
+      console.error(`[INBOUND] Supabase error ${response.status}: ${errText}`);
+      return res.status(500).json({
         success: false,
         message: 'Failed to store email in Supabase',
-        email: { from, to, subject },
-        supabase_error: error,
+        supabase_error: errText,
         supabase_status: response.status,
       });
     }
 
-    const result = await response.json();
+    console.log(`[INBOUND] Email stored successfully from=${from}`);
+    return res.status(200).json({ success: true, message: 'Email ingested successfully' });
 
-    return res.status(200).json({
-      success: true,
-      message: 'Email ingested successfully',
-      email: { from, to, subject },
-      data: result,
-    });
   } catch (error) {
-    console.error('Ingest error:', error);
-
-    return res.status(500).json({
-      error: 'Failed to ingest email',
-      message: error.message,
-    });
+    console.error('[INBOUND] Exception:', error.message);
+    return res.status(500).json({ error: 'Failed to ingest email', message: error.message });
   }
 });
 

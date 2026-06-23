@@ -303,12 +303,13 @@ app.post('/api/inbound', async (req, res) => {
           'Authorization': `Bearer ${SUPABASE_KEY}`,
           'Prefer': 'return=minimal',
         },
-        // Use actual column names from schema: from_address, to_address, subject, body
+        // Use actual column names from schema: from_address, to_address, subject, body, workspace_key
         body: JSON.stringify({
           from_address: from,
           to_address: to || null,
           subject,
           body: text || html || null,
+          workspace_key: 'keraos',
         }),
       }
     );

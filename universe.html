@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Work Universe OS — MedStar Portfolio Command</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  <link href='https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css' rel='stylesheet' />
+  <script src='https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js'></script>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
@@ -1069,6 +1072,303 @@ function orbDone(){clearInterval(orb._iv);orbOff()}
 
 /* ============================ VIEWS ============================ */
 const Views={};
+
+// ═══════════════════════════════════════════════════════
+// OPERATIONS MAP VIEW
+// ═══════════════════════════════════════════════════════
+const MEDSTAR_SITES_GEO = [
+  {code:"MWHC",  name:"MedStar Washington Hospital Center",     lat:38.9221, lng:-77.0268, city:"Washington, DC"},
+  {code:"MGUH",  name:"MedStar Georgetown University Hospital", lat:38.9120, lng:-77.0724, city:"Washington, DC"},
+  {code:"MNRH",  name:"MedStar National Rehabilitation Hospital",lat:38.9233,lng:-77.0278, city:"Washington, DC"},
+  {code:"MUMH",  name:"MedStar Union Memorial Hospital",        lat:39.3379, lng:-76.6093, city:"Baltimore, MD"},
+  {code:"MGSH",  name:"MedStar Good Samaritan Hospital",        lat:39.3614, lng:-76.5724, city:"Baltimore, MD"},
+  {code:"MHH",   name:"MedStar Harbor Hospital",                lat:39.2501, lng:-76.6079, city:"Baltimore, MD"},
+  {code:"MFSHC", name:"MedStar Franklin Square Medical Center", lat:39.2907, lng:-76.5097, city:"Rosedale, MD"},
+  {code:"MMMC",  name:"MedStar Montgomery Medical Center",      lat:39.1398, lng:-77.0429, city:"Olney, MD"},
+  {code:"MSMHC", name:"MedStar Southern Maryland Hospital Center",lat:38.7708,lng:-76.9218,city:"Clinton, MD"},
+  {code:"MSMH",  name:"MedStar St. Mary's Hospital",            lat:38.2983, lng:-76.6679, city:"Leonardtown, MD"},
+];
+
+window._opsMap = null;
+window._opsMapMarkers = {};
+window._opsMapSelected = null;
+window._opsMapHighlight = null; // null=all, array=subset
+
+function getHospitalHealth(code) {
+  const hosp = (DB.hospitals||[]).find(h => h.code === code || h.name?.includes(code));
+  if (!hosp) return {score:null, label:"No Data", color:"var(--ink3)"};
+  const projects = (DB.projects||[]).filter(p => p.hospitalId === hosp.id || p.siteId === hosp.id);
+  if (!projects.length) return {score:null, label:"No Data", color:"var(--ink3)"};
+  const total = projects.length;
+  const done = projects.filter(p => p.status === "complete" || p.status === "done").length;
+  const stalled = projects.filter(p => p.status === "stalled" || p.status === "blocked" || p.status === "overdue").length;
+  const score = Math.round((done / total) * 100);
+  if (stalled > 0) return {score, label:"At Risk", color:"var(--crit)"};
+  if (score >= 70) return {score, label:"Healthy", color:"var(--ok)"};
+  if (score >= 40) return {score, label:"Watch", color:"var(--warn)"};
+  return {score, label:"At Risk", color:"var(--crit)"};
+}
+
+function opsMapInit(containerId) {
+  const token = localStorage.getItem("ops_mapbox_token") || "";
+  if (!token) return;
+  if (typeof mapboxgl === "undefined") return;
+  if (window._opsMap) { window._opsMap.remove(); window._opsMap = null; window._opsMapMarkers = {}; }
+  
+  mapboxgl.accessToken = token;
+  const map = new mapboxgl.Map({
+    container: containerId,
+    style: "mapbox://styles/mapbox/dark-v11",
+    center: [-76.9, 38.9],
+    zoom: 7.5,
+    attributionControl: false,
+  });
+  map.addControl(new mapboxgl.NavigationControl({showCompass: false}), "top-right");
+  map.addControl(new mapboxgl.AttributionControl({compact: true}), "bottom-right");
+  
+  map.on("load", () => {
+    MEDSTAR_SITES_GEO.forEach(geo => {
+      const ph = getHospitalHealth(geo.code);
+      const isHighlighted = !window._opsMapHighlight || window._opsMapHighlight.includes(geo.code);
+      
+      const el = document.createElement("div");
+      el.className = "ops-marker";
+      el.style.cssText = `width:14px;height:14px;border-radius:50%;background:${ph.color};border:2px solid rgba(255,255,255,0.4);box-shadow:0 0 10px ${ph.color}88;cursor:pointer;position:relative;opacity:${isHighlighted?1:0.2};transition:all 0.2s`;
+      
+      const lbl = document.createElement("div");
+      lbl.style.cssText = `position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:9px;font-weight:700;color:${isHighlighted?"var(--ink)":"var(--ink3)"};white-space:nowrap;letter-spacing:0.06em;text-shadow:0 1px 4px rgba(0,0,0,0.8);pointer-events:none`;
+      lbl.textContent = geo.code;
+      el.appendChild(lbl);
+      
+      el.addEventListener("click", () => {
+        window._opsMapSelected = geo.code;
+        map.flyTo({center:[geo.lng,geo.lat], zoom:13, duration:1200});
+        renderOpsMapDetail(geo.code);
+      });
+      
+      const marker = new mapboxgl.Marker({element:el}).setLngLat([geo.lng, geo.lat]).addTo(map);
+      window._opsMapMarkers[geo.code] = {marker, el};
+    });
+  });
+  
+  window._opsMap = map;
+}
+
+function renderOpsMapDetail(code) {
+  const panel = document.getElementById("ops-map-detail");
+  if (!panel) return;
+  const geo = MEDSTAR_SITES_GEO.find(g=>g.code===code);
+  if (!geo) return;
+  const hosp = (DB.hospitals||[]).find(h=>h.code===code||h.name?.includes(code));
+  const ph = getHospitalHealth(code);
+  const projects = hosp ? (DB.projects||[]).filter(p=>p.hospitalId===hosp.id||p.siteId===hosp.id) : [];
+  const openProj = projects.filter(p=>p.status!=="complete"&&p.status!=="done");
+  
+  panel.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <span style="font-family:var(--mono);font-size:11px;font-weight:700;color:var(--amber2);letter-spacing:.1em">${geo.code}</span>
+      <button onclick="window._opsMapSelected=null;document.getElementById('ops-map-detail').innerHTML='<div style=\\'color:var(--ink3);font-size:12px;padding:8px\\'>Click a marker or site</div>'" style="background:none;border:none;color:var(--ink3);cursor:pointer;font-size:14px">×</button>
+    </div>
+    <div style="font-size:12px;color:var(--ink);margin-bottom:4px">${geo.name}</div>
+    <div style="font-family:var(--mono);font-size:10px;color:var(--ink3);margin-bottom:10px">${geo.city}</div>
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--glass);border:1px solid var(--stroke);margin-bottom:10px">
+      <div style="width:8px;height:8px;border-radius:50%;background:${ph.color};flex-shrink:0"></div>
+      <span style="font-family:var(--mono);font-size:10px;color:${ph.color};font-weight:700">${ph.label}${ph.score!==null?' · '+ph.score+'%':''}</span>
+      ${projects.length?`<span style="font-family:var(--mono);font-size:10px;color:var(--ink3);margin-left:auto">${projects.length} projects</span>`:''}
+    </div>
+    ${openProj.length?`
+    <div style="font-family:var(--mono);font-size:9px;color:var(--ink3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Open Projects</div>
+    ${openProj.slice(0,5).map(p=>`
+      <div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--hair)">
+        <div style="width:5px;height:5px;border-radius:50%;background:${p.status==='stalled'||p.status==='blocked'?'var(--crit)':'var(--warn)'};flex-shrink:0"></div>
+        <span style="font-size:11px;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${p.name||p.title||'Untitled'}</span>
+      </div>`).join('')}
+    ${openProj.length>5?`<div style="font-family:var(--mono);font-size:10px;color:var(--ink3);margin-top:4px">+${openProj.length-5} more</div>`:''}
+    `:'<div style="color:var(--ink3);font-size:11px">No open projects</div>'}
+  `;
+}
+
+function opsMapExecuteCommand(cmd) {
+  const map = window._opsMap;
+  if (!map) return;
+  const geoByCode = Object.fromEntries(MEDSTAR_SITES_GEO.map(g=>[g.code,g]));
+  
+  if (cmd.action === "flyTo" && cmd.site) {
+    const geo = geoByCode[cmd.site];
+    if (geo) { map.flyTo({center:[geo.lng,geo.lat],zoom:13,duration:1200}); renderOpsMapDetail(cmd.site); }
+  } else if (cmd.action === "showGroup") {
+    const dc = ["MWHC","MGUH","MNRH"];
+    const balt = ["MUMH","MGSH","MHH","MFSHC"];
+    const codes = cmd.group==="dc"?dc:cmd.group==="baltimore"?balt:null;
+    window._opsMapHighlight = codes;
+    Object.entries(window._opsMapMarkers).forEach(([code,{el}])=>{
+      const on = !codes || codes.includes(code);
+      el.style.opacity = on?1:0.15;
+      el.firstChild.style.color = on?"var(--ink)":"var(--ink3)";
+    });
+    if (codes) {
+      const tgts = MEDSTAR_SITES_GEO.filter(g=>codes.includes(g.code));
+      const lngs=tgts.map(g=>g.lng), lats=tgts.map(g=>g.lat);
+      map.fitBounds([[Math.min(...lngs)-.08,Math.min(...lats)-.05],[Math.max(...lngs)+.08,Math.max(...lats)+.05]],{padding:60,duration:1200});
+    } else { map.flyTo({center:[-76.9,38.9],zoom:7.5,duration:1200}); }
+  } else if (cmd.action === "highlight" && cmd.codes) {
+    window._opsMapHighlight = cmd.codes;
+    Object.entries(window._opsMapMarkers).forEach(([code,{el}])=>{
+      const on = cmd.codes.includes(code);
+      el.style.opacity = on?1:0.15;
+      el.firstChild.style.color = on?"var(--ink)":"var(--ink3)";
+    });
+    const tgts = MEDSTAR_SITES_GEO.filter(g=>cmd.codes.includes(g.code));
+    if (tgts.length===1) { map.flyTo({center:[tgts[0].lng,tgts[0].lat],zoom:12,duration:1200}); renderOpsMapDetail(tgts[0].code); }
+    else if (tgts.length>1) {
+      const lngs=tgts.map(g=>g.lng), lats=tgts.map(g=>g.lat);
+      map.fitBounds([[Math.min(...lngs)-.08,Math.min(...lats)-.05],[Math.max(...lngs)+.08,Math.max(...lats)+.05]],{padding:80,duration:1200});
+    }
+  } else if (cmd.action === "highlightAll") {
+    window._opsMapHighlight = null;
+    Object.values(window._opsMapMarkers).forEach(({el})=>{el.style.opacity=1;el.firstChild.style.color="var(--ink)";});
+    map.flyTo({center:[-76.9,38.9],zoom:7.5,duration:1200});
+  } else if (cmd.action === "filterOverdue") {
+    const at_risk = MEDSTAR_SITES_GEO.map(g=>g.code).filter(code=>getHospitalHealth(code).label==="At Risk");
+    window._opsMapHighlight = at_risk.length?at_risk:null;
+    Object.entries(window._opsMapMarkers).forEach(([code,{el}])=>{
+      const on = !at_risk.length || at_risk.includes(code);
+      el.style.opacity=on?1:0.15; el.firstChild.style.color=on?"var(--ink)":"var(--ink3)";
+    });
+    if (at_risk.length) {
+      const tgts = MEDSTAR_SITES_GEO.filter(g=>at_risk.includes(g.code));
+      const lngs=tgts.map(g=>g.lng), lats=tgts.map(g=>g.lat);
+      map.fitBounds([[Math.min(...lngs)-.08,Math.min(...lats)-.05],[Math.max(...lngs)+.08,Math.max(...lats)+.05]],{padding:80,duration:1200});
+    }
+  } else if (cmd.action === "info" && cmd.site) {
+    renderOpsMapDetail(cmd.site);
+  }
+}
+
+async function opsMapKeraCommand(cmdText, apiKey, model) {
+  if (!cmdText.trim() || !apiKey) return "No API key configured.";
+  const systemPrompt = `You control an Operations Map showing 10 MedStar hospital sites.
+Sites: MWHC(DC), MGUH(DC), MNRH(DC), MUMH(Baltimore), MGSH(Baltimore), MHH(Baltimore), MFSHC(Rosedale MD), MMMC(Olney MD), MSMHC(Clinton MD), MSMH(Leonardtown MD).
+Respond with JSON action then a plain-text explanation on the next line.
+Actions: {"action":"flyTo","site":"CODE"} | {"action":"showGroup","group":"dc"|"baltimore"|"all"} | {"action":"highlight","codes":["CODE",...]} | {"action":"highlightAll"} | {"action":"filterOverdue"} | {"action":"info","site":"CODE"}`;
+  
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method:"POST",
+      headers:{"content-type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:model||"claude-sonnet-4-6",max_tokens:256,system:systemPrompt,messages:[{role:"user",content:cmdText}]})
+    });
+    const data = await res.json();
+    const reply = data.content?.[0]?.text||"";
+    const jsonMatch = reply.match(/\{[\s\S]*?\}/);
+    const explanation = reply.replace(/\{[\s\S]*?\}/,"").trim();
+    if (jsonMatch) {
+      try { opsMapExecuteCommand(JSON.parse(jsonMatch[0])); } catch {}
+    }
+    return explanation || "Done.";
+  } catch(e) { return "Error: "+e.message; }
+}
+
+Views.map = () => {
+  const token = localStorage.getItem("ops_mapbox_token")||"";
+  
+  if (!token) {
+    return `<h1 class="pg">Operations Map</h1>
+<p class="pgsub">MedStar Portfolio — 10 Sites</p>
+<div style="background:var(--glass);border:1px solid var(--stroke2);padding:24px;max-width:480px;margin-top:16px">
+  <p style="color:var(--ink2);font-size:13px;margin-bottom:16px;line-height:1.6">A Mapbox access token is required to load the map. Get a free token at <a href="https://mapbox.com" target="_blank" style="color:var(--cyan)">mapbox.com</a> — free tier covers thousands of map loads.</p>
+  <div style="font-family:var(--mono);font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Mapbox Public Token</div>
+  <input id="ops-token-input" placeholder="pk.eyJ1..." style="width:100%;background:var(--bg1);border:1px solid var(--stroke2);color:var(--ink);font-family:var(--mono);font-size:12px;padding:8px 12px;margin-bottom:12px">
+  <button onclick="
+    const t=document.getElementById('ops-token-input').value.trim();
+    if(!t.startsWith('pk.')){alert('Token must start with pk.');return;}
+    localStorage.setItem('ops_mapbox_token',t);
+    navigate('map');
+  " style="background:var(--amber);color:#1a1200;border:none;padding:9px 18px;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.08em;cursor:pointer">LOAD MAP</button>
+  <p style="font-family:var(--mono);font-size:10px;color:var(--ink3);margin-top:10px">Stored locally. Never leaves your browser.</p>
+</div>`;
+  }
+
+  // Build side list HTML
+  const sideList = MEDSTAR_SITES_GEO.map(geo => {
+    const ph = getHospitalHealth(geo.code);
+    return `<button onclick="window._opsMapSelected='${geo.code}';if(window._opsMap){window._opsMap.flyTo({center:[${geo.lng},${geo.lat}],zoom:13,duration:1200});}renderOpsMapDetail('${geo.code}')" 
+      style="display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;background:none;border:none;border-bottom:1px solid var(--hair);cursor:pointer;text-align:left;transition:background .12s" 
+      onmouseover="this.style.background='var(--glass)'" onmouseout="this.style.background='none'">
+      <div style="width:9px;height:9px;border-radius:50%;background:${ph.color};flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-family:var(--mono);font-size:10px;font-weight:700;color:var(--amber2)">${geo.code}</div>
+        <div style="font-size:11px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${geo.city}</div>
+      </div>
+      ${ph.score!==null?`<span style="font-family:var(--mono);font-size:10px;color:${ph.color};font-weight:700">${ph.score}%</span>`:''}
+    </button>`;
+  }).join('');
+
+  return `
+  <style>
+  #ops-map-outer{display:flex;gap:0;height:calc(100vh - 120px);min-height:500px;border:1px solid var(--stroke2)}
+  #ops-map-container{flex:1;min-height:0;position:relative}
+  #ops-map-sidebar{width:260px;flex-shrink:0;border-left:1px solid var(--stroke);background:var(--bg1);display:flex;flex-direction:column;overflow:hidden}
+  #ops-map-kera{border-top:1px solid var(--stroke);padding:10px;flex-shrink:0;background:var(--bg0)}
+  .ops-legend-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+  @media(max-width:900px){#ops-map-outer{flex-direction:column;height:auto}#ops-map-container{height:360px}#ops-map-sidebar{width:100%;border-left:none;border-top:1px solid var(--stroke)}}
+  </style>
+  
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+    <div>
+      <h1 class="pg" style="margin-bottom:2px">Operations Map</h1>
+      <p class="pgsub">MedStar Portfolio · 10 Sites · Live Data</p>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:5px"><div class="ops-legend-dot" style="background:var(--ok)"></div><span style="font-family:var(--mono);font-size:10px;color:var(--ink3)">Healthy</span></div>
+      <div style="display:flex;align-items:center;gap:5px"><div class="ops-legend-dot" style="background:var(--warn)"></div><span style="font-family:var(--mono);font-size:10px;color:var(--ink3)">Watch</span></div>
+      <div style="display:flex;align-items:center;gap:5px"><div class="ops-legend-dot" style="background:var(--crit)"></div><span style="font-family:var(--mono);font-size:10px;color:var(--ink3)">At Risk</span></div>
+      <button onclick="localStorage.removeItem('ops_mapbox_token');navigate('map')" style="background:none;border:none;color:var(--ink3);font-family:var(--mono);font-size:10px;cursor:pointer;text-decoration:underline">Reset Token</button>
+    </div>
+  </div>
+  
+  <div id="ops-map-outer">
+    <div id="ops-map-container"></div>
+    <div id="ops-map-sidebar">
+      <div style="flex:1;overflow-y:auto">${sideList}</div>
+      <div id="ops-map-detail" style="padding:12px;border-top:1px solid var(--stroke);background:var(--glass);flex-shrink:0;max-height:280px;overflow-y:auto">
+        <div style="color:var(--ink3);font-size:12px">Click a marker or site</div>
+      </div>
+      <div id="ops-map-kera">
+        <div id="ops-kera-log" style="max-height:80px;overflow-y:auto;margin-bottom:8px;font-family:var(--mono);font-size:10px;color:var(--cyan2);line-height:1.5"></div>
+        <div style="display:flex;gap:6px">
+          <input id="ops-kera-input" placeholder="Ask AI: Show Baltimore sites..." 
+            style="flex:1;background:var(--bg1);border:1px solid var(--stroke2);color:var(--ink);font-size:12px;padding:7px 10px"
+            onkeydown="if(event.key==='Enter'){opsMapSendKera()}">
+          <button onclick="opsMapSendKera()" id="ops-kera-btn"
+            style="background:var(--amber);color:#1a1200;border:none;padding:7px 12px;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer">GO</button>
+        </div>
+        <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap">
+          ${["Show Baltimore","Show DC","At risk?","Show all"].map(c=>`<button onclick="document.getElementById('ops-kera-input').value='${c}';opsMapSendKera()" style="background:var(--glass);border:1px solid var(--stroke);color:var(--ink3);font-family:var(--mono);font-size:9px;padding:3px 7px;cursor:pointer">${c}</button>`).join('')}
+        </div>
+      </div>
+    </div>
+  </div>`;
+};
+
+async function opsMapSendKera() {
+  const input = document.getElementById("ops-kera-input");
+  const btn = document.getElementById("ops-kera-btn");
+  const log = document.getElementById("ops-kera-log");
+  if (!input || !input.value.trim()) return;
+  const cmd = input.value.trim();
+  if (log) { log.innerHTML += `<div style="color:var(--ink2)">> ${cmd}</div>`; log.scrollTop = log.scrollHeight; }
+  if (btn) { btn.disabled=true; btn.textContent="..."; }
+  const apiKey = localStorage.getItem("api_key") || "";
+  const model = localStorage.getItem("model") || "claude-sonnet-4-6";
+  const reply = await opsMapKeraCommand(cmd, apiKey, model);
+  if (log) { log.innerHTML += `<div style="color:var(--cyan2);padding-left:8px;border-left:2px solid var(--cyan)">${reply}</div>`; log.scrollTop = log.scrollHeight; }
+  if (btn) { btn.disabled=false; btn.textContent="GO"; }
+  input.value = "";
+}
+// ═══════════════════════════════════════════════════════
+// END OPERATIONS MAP VIEW
+// ═══════════════════════════════════════════════════════
 Views.dashboard=()=>{
   const recs=recsEngine(),oA=DB.actions.filter(a=>a.status==="Open"),oW=openWOs(),oI=openInvs(),
     odA=oA.filter(a=>isPast(a.due)),odW=oW.filter(w=>isPast(w.due)),odI=oI.filter(i=>isPast(i.dueDate)),
@@ -1904,7 +2204,7 @@ async function resetAll(){for(const d of (DB.documents||[]).filter(x=>x.hasFile)
 
 /* ============================ ROUTER & BOOT ============================ */
 let ROUTE={name:"dashboard"};
-const NAV=[["Command",[["dashboard","◈","Dashboard"],["hospitals","⬢","Hospitals"],["graph","✦","Knowledge Graph"],["brain","◎","AI Brain"]]],
+const NAV=[["Command",[["dashboard","◈","Dashboard"],["map","▦","Operations Map"],["hospitals","⬢","Hospitals"],["graph","✦","Knowledge Graph"],["brain","◎","AI Brain"]]],
   ["Operate",[["ingest","⇣","Ingest Data"],["projects","◧","Projects"],["workorders","⚙","Work Orders"],["invoices","⌸","Invoices"],["email","✉","Email Intel"],["risks","⚠","Risks"],["actions","➤","Actions"],["vendors","⬡","Vendors"]]],
   ["Comply & Report",[["PROJECT","☑","PROJECT Compliance"],["calendar","▦","Calendar"],["reports","▥","Reports"],["settings","⚒","Settings"]]]];
 function navBadge(name){
@@ -1934,6 +2234,7 @@ function render(){
 function postRender(){
   updateBeacon();countUps();animateRings();
   if(ROUTE.name==="dashboard"){drawUMap();drawHorizon()}
+  if(ROUTE.name==="map"){setTimeout(()=>opsMapInit("ops-map-container"),50)}
   if(ROUTE.name==="ingest"){
     const dz=$("#dropzone"),fi=$("#filein");if(dz){
     dz.onclick=()=>fi.click();fi.onchange=()=>ingestFiles([...fi.files]);

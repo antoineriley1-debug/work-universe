@@ -356,7 +356,14 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'universe.html'));
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Work Universe running on port ${PORT}`);
-});
+// Start the server only when run directly (local dev / Render).
+// On Vercel the file is imported as a module, so listen() must be skipped there.
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Work Universe running on port ${PORT}`);
+  });
+}
+
+// Export the Express app so Vercel's @vercel/node runtime handles requests.
+// Without this, /api/anthropic returns 404 on Vercel ("gateway not deployed").
+module.exports = app;

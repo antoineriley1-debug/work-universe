@@ -95,7 +95,7 @@ app.post('/api/anthropic', async (req, res) => {
 // Email AI Action Endpoints
 app.post('/api/email-action', async (req, res) => {
   const { action, emailId, emailBody, emailSubject, emailFrom } = req.body;
-  const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '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';
+  const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 
   if (!ANTHROPIC_KEY) {
     return res.status(500).json({ error: 'Server missing ANTHROPIC_API_KEY' });

@@ -510,6 +510,8 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{animation:none
   #bottombar .bb.voice .bbi{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-top:-20px;background:radial-gradient(circle at 36% 30%,rgba(120,220,240,.4),rgba(20,40,60,.92) 60%);border:1px solid rgba(86,214,232,.55);box-shadow:0 0 20px rgba(86,214,232,.3);font-size:20px}
   #orbdock{display:none}
   #topbtns .tbtn.mic{display:none}
+  body.navopen #bottombar{display:none}
+  #nav{padding-bottom:calc(20px + env(safe-area-inset-bottom,0px))}
 }
 </style>
 <style>
@@ -882,14 +884,35 @@ const AI={
   parseJSON(text){
     let t=(text||"").trim().replace(/```json/gi,"```");
     const m=t.match(/```([\s\S]*?)```/);if(m)t=m[1].trim();else t=t.replace(/```/g,"").trim();
-    const s=t.indexOf("{"),e=t.lastIndexOf("}");if(s>=0&&e>s)t=t.slice(s,e+1);
-    return JSON.parse(t);
+    const s=t.indexOf("{");if(s<0)return JSON.parse(t);
+    const e=t.lastIndexOf("}");
+    const cand=(e>s)?t.slice(s,e+1):t.slice(s);
+    try{return JSON.parse(cand);}catch(_){}
+    try{return JSON.parse(repairTruncatedJSON(cand));}catch(_){}
+    const cut=lastSafeComma(cand);
+    if(cut>0){try{return JSON.parse(repairTruncatedJSON(cand.slice(0,cut)));}catch(_){}}
+    return JSON.parse(cand);
   },
   async json(messages,opts={}){
     const r=await this.call(messages,opts);
-    try{return this.parseJSON(r.text)}catch(e){throw new Error("AI returned unparseable JSON: "+r.text.slice(0,200))}
+    try{return this.parseJSON(r.text)}catch(e){const t=r.text||"";throw new Error("AI returned unparseable JSON ("+t.length+" chars). START: "+t.slice(0,140)+(t.length>220?"  … END: "+t.slice(-80):""))}
   }
 };
+function lastSafeComma(t){let inStr=false,escp=false,idx=-1;for(let i=0;i<t.length;i++){const c=t[i];if(inStr){if(escp)escp=false;else if(c==='\\')escp=true;else if(c==='"')inStr=false;}else{if(c==='"')inStr=true;else if(c===',')idx=i;}}return idx;}
+function repairTruncatedJSON(t){
+  t=(t||"").trim();let inStr=false,escp=false;const stack=[];
+  for(let i=0;i<t.length;i++){const c=t[i];
+    if(inStr){if(escp)escp=false;else if(c==='\\')escp=true;else if(c==='"')inStr=false;}
+    else{if(c==='"')inStr=true;else if(c==='{')stack.push('}');else if(c==='[')stack.push(']');else if(c==='}'||c===']')stack.pop();}}
+  let out=t;
+  if(inStr)out+='"';
+  out=out.replace(/\\+$/,'');
+  out=out.replace(/,\s*$/,'');
+  out=out.replace(/:\s*$/,':null');
+  out=out.replace(/,\s*$/,'');
+  for(let i=stack.length-1;i>=0;i--)out+=stack[i];
+  return out;
+}
 function aiUnavailableNote(){if(Store.hasClaude)return null;if(/^https?:$/.test(location.protocol))return null;return "Open this app on keraos.cc or inside Claude to use AI — this copy has no route to the gateway. Data entry, views, and reports still work."}
 
 function portfolioContext(){

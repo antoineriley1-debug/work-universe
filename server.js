@@ -73,7 +73,7 @@ app.post('/api/anthropic', async (req, res) => {
       },
       body: JSON.stringify({
         model: model || 'claude-sonnet-4-6',
-        max_tokens: Math.min(Number(max_tokens) || 1800, 4000),
+        max_tokens: Math.min(Number(max_tokens) || 1800, 8192),
         system: system || '',
         messages
       })
@@ -315,13 +315,14 @@ app.post('/api/inbound', async (req, res) => {
           'Authorization': `Bearer ${SUPABASE_KEY}`,
           'Prefer': 'return=minimal',
         },
-        // Use actual column names from schema: from_address, to_address, subject, body, workspace_key
+        // Real columns (proven by /api/save-email): workspace_key is NOT NULL so it MUST be sent (omitting = 23502).
+        // to_address does NOT exist on the table, so sending it made PostgREST 400 the whole insert and silently
+        // drop every inbound email. Send only real columns; saved_at / created_at default to NOW().
         body: JSON.stringify({
+          workspace_key: process.env.WORKSPACE_KEY || 'twiney-execos-mGJ7Yk9Lp2RnDqW8sZ4eXbHvC3FaTu6N',
           from_address: from,
-          to_address: to || null,
           subject,
           body: text || html || null,
-          workspace_key: 'keraos',
         }),
       }
     );

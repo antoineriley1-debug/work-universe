@@ -512,6 +512,28 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{animation:none
   #topbtns .tbtn.mic{display:none}
 }
 </style>
+<style>
+.rightnow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 14px;padding:10px 14px;background:var(--glass2);border:1px solid var(--stroke2);border-left:2px solid var(--amber);border-radius:5px}
+.rightnow .rn-label{font-family:var(--mono);font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--amber2);white-space:nowrap}
+.rightnow .rn-item{font-size:12px;color:var(--ink);background:rgba(255,255,255,.04);border:1px solid var(--stroke);border-left:2px solid var(--ink3);border-radius:3px;padding:5px 10px;cursor:pointer;transition:all .15s;text-align:left;max-width:100%}
+.rightnow .rn-item:hover{border-color:var(--cyan);color:var(--cyan2)}
+.rightnow .rn-item.crit{border-left-color:var(--crit)}
+.rightnow .rn-item.warn{border-left-color:var(--warn)}
+.rightnow .rn-item.ok{border-left-color:var(--ok)}
+.rightnow .rn-clear{font-size:12px;color:var(--ok)}
+.bchips{display:flex;gap:7px;flex-wrap:wrap;margin-top:2px}
+.bchip{font-size:11.5px;color:var(--ink2);background:rgba(86,214,232,.06);border:1px solid rgba(86,214,232,.2);border-radius:14px;padding:5px 11px;cursor:pointer;transition:all .15s}
+.bchip:hover{background:rgba(86,214,232,.14);color:var(--cyan2);border-color:var(--cyan)}
+.view{animation:viewfade .26s var(--ease)}
+@keyframes viewfade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.btn:active,.tbtn:active,.bb:active,.bchip:active,.rn-item:active{transform:scale(.96)}
+@media (max-width:900px){
+  .panel{-webkit-overflow-scrolling:touch}
+  table.tbl td,table.tbl th{padding:10px 8px}
+  table.tbl td .btn,table.tbl td button{min-height:34px;min-width:34px}
+  .rightnow{padding:9px 11px}
+}
+</style>
 <nav id="bottombar"></nav>
 <div id="voicemode">
   <button id="vmclose" onclick="closeVoiceMode()" title="Exit voice">✕</button>
@@ -1777,6 +1799,7 @@ Views.dashboard=()=>{
    <div class="pghead"><div class="grow"><div class="eyebrow am">MISSION CONTROL // ALL SYSTEMS</div><h1 class="pg">Work Universe</h1></div>
      <div class="ringwrap panel tight heads-up" style="padding:9px 14px">${ringSVG(portfolioHealth(),58,6)}<div class="ringlbl"><div class="rv" data-count="${portfolioHealth()}">0</div><div class="rl">portfolio<br>health</div></div></div>
      <button class="btn primary" onclick="go('#/brain')">◎ Ask the Brain</button></div>
+   <div class="rightnow"><span class="rn-label">Right Now</span>${recs.slice(0,3).map(r=>`<button class="rn-item ${r.sev}" onclick="go('#/e/${typeOf(r.id)}/${r.id}')">${esc((r.text||"").slice(0,64))}</button>`).join("")||'<span class="rn-clear">✓ All clear — nothing needs you right now</span>'}</div>
    ${pinned.length?`<div class="flexr" style="margin-bottom:12px"><span class="eyebrow">Pinned</span>${pinned.map(chip).join("")}</div>`:""}
    <div class="mc">
     <div class="mcrail stagger">
@@ -2436,12 +2459,15 @@ function showGInfo(id){
 
 /* ============================ THE BRAIN (AI CHAT) ============================ */
 let BRAIN=[];
+const BCHIPS=["What needs my attention today?","Which vendor owes me a proposal?","Give me a full briefing","What's overdue across all sites?"];
+function bchipSend(i){const c=BCHIPS[i];if(c)askBrain(c);}
+function bchipsHTML(){return '<div class="bchips">'+BCHIPS.map((c,i)=>'<button class="bchip" onclick="bchipSend('+i+')">'+esc(c)+'</button>').join("")+'</div>';}
 Views.brain=()=>`<div class="view"><div class="pghead"><div class="grow"><div class="eyebrow am">AI Knowledge Brain</div><h1 class="pg">Ask the Universe</h1>
   <div class="pgsub">Answers from everything ingested — cites records, infers connections, flags what's missing, recommends next moves.${aiUnavailableNote()?' <span style="color:var(--amber2)">'+aiUnavailableNote()+'</span>':''}</div></div>
   <label class="sm mut" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="useMCP" ${(SETTINGS.mcpSmartsheet||SETTINGS.mcpMail||SETTINGS.mcpDrive)&&Store.hasClaude?"":"disabled"}> Pull live Smartsheet / Mail / Drive${Store.hasClaude?"":' <span class="xs mut2">(runs inside Claude)</span>'}</label></div>
   <div class="panel" style="display:flex;flex-direction:column;gap:12px">
     <div id="brainlog">${BRAIN.map(m=>brainMsg(m)).join("")||'<div class="msg sys">Try: "What\u2019s going on at Harbor?" · "Which vendor owes me a proposal?" · "Top 5 issues across all hospitals" · "Draft an update email for Tom about water meters"</div>'}</div>
-    <div class="flexr"><input id="brainin" placeholder="Ask anything about your portfolio…" style="flex:1" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();askBrain()}"><button class="btn" onclick="toggleMic()" title="Talk to Kera">🎤</button><button class="btn primary" onclick="askBrain()">Send</button><button class="btn" onclick="speak(BRAIN.filter(m=>m.role==='ai').slice(-1)[0]?.text||'')" title="Replay last answer">▶</button></div></div></div>`;
+    <div class="flexr"><input id="brainin" placeholder="Ask anything about your portfolio…" style="flex:1" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();askBrain()}"><button class="btn" onclick="toggleMic()" title="Talk to Kera">🎤</button><button class="btn primary" onclick="askBrain()">Send</button><button class="btn" onclick="speak(BRAIN.filter(m=>m.role==='ai').slice(-1)[0]?.text||'')" title="Replay last answer">▶</button></div>${bchipsHTML()}</div></div>`;
 function linkify(t){return esc(t).replace(/\[((?:h|p|v|pe|em|doc|wo|inv|as|rk|ac|nt|df|rq)-[a-z0-9]+)\]/g,(m,id)=>{const r=rec(id);return r?`<a href="#/e/${typeOf(id)}/${id}" style="color:var(--amber2)">[${esc(nameOf(r)).slice(0,30)}]</a>`:m})}
 function brainMsg(m){
   if(m.role==="user")return `<div class="msg user">${esc(m.text)}</div>`;

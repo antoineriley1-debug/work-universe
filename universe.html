@@ -842,7 +842,7 @@ function localSearch(q,limit=40){
   const toks=q.split(/\s+/).filter(t=>t.length>1);
   const out=[];
   for(const t of Object.keys(ENT)){for(const r of DB[col(t)]){
-    const txt=searchText(r)+" "+t+" "+ENT[t].label.toLowerCase();
+    const txt=searchText(r)+" "+t+" "+(ENT[t]?ENT[t].label:t).toLowerCase();
     let score=0;for(const tk of toks){if(txt.includes(tk))score+=tk.length>3?2:1}
     const h=hospOf(r.id);if(h&&toks.some(tk=>h.code.toLowerCase().includes(tk)||h.name.toLowerCase().includes(tk)))score+=1;
     if(score>0)out.push({r,t,score});
@@ -944,7 +944,7 @@ function snapshotFor(query,max=34){
     ...DB.invoices.filter(i=>!["Paid","Archived"].includes(i.status)&&isPast(i.dueDate))].slice(0,12);
   const seen=new Set(),rows=[];
   for(const r of [...recent,...base,...extra]){if(seen.has(r.id))continue;seen.add(r.id);
-    const t=typeOf(r.id),h=hospOf(r.id);
+    const t=typeOf(r.id);if(!ENT[t])continue;const h=hospOf(r.id);
     rows.push("["+r.id+"] "+ENT[t].label+" | "+(h?h.code+" | ":"")+
       [nameOf(r),r.status,r.severity,r.owner&&("owner:"+r.owner),r.due&&("due:"+r.due),r.dueDate&&("due:"+r.dueDate),r.amount!=null&&fmt$(r.amount),r.vendorName,(r.summary||r.body||r.text||"").slice(0,180)].filter(Boolean).join(" | "));
     if(rows.length>=max+12)break;
@@ -1025,7 +1025,7 @@ function commitExtraction(){
 }
 
 /* ============================ SHARED RENDER HELPERS ============================ */
-function chip(r){if(!r)return"";const t=typeOf(r.id);return '<a class="chip t-'+t+'" href="#/e/'+t+'/'+r.id+'">'+ENT[t].icon+' '+esc(nameOf(r)).slice(0,46)+'</a>'}
+function chip(r){if(!r)return"";const t=typeOf(r.id);return '<a class="chip t-'+t+'" href="#/e/'+t+'/'+r.id+'">'+(ENT[t]?ENT[t].icon:"•")+' '+esc(nameOf(r)).slice(0,46)+'</a>'}
 function chips(list){return list.length?'<div class="pillrow">'+list.map(chip).join("")+'</div>':'<span class="mut2 xs">none linked</span>'}
 function statBadge(s){const k=/crit|overdue|deficien|expired|open$/i.test(s||"")?"crit":/missing|pending|waiting|review|warn/i.test(s||"")?"warn":/ready|complete|paid|closed|verified|done/i.test(s||"")?"ok":"info";return '<span class="stat '+k+'">'+esc(s||"—")+'</span>'}
 function openWOs(){return DB.workOrders.filter(w=>!["Completed","Verified","Closed"].includes(w.status))}
@@ -1122,7 +1122,7 @@ function riskRadarSVG(W=340){
 function radarDrill(id){const r=rec(id);if(!r)return;const lk=linked(id).slice(0,12);
   openDrawer("Source Chain — "+nameOf(r).slice(0,30),
     `<div class="sm" style="margin-bottom:8px">${esc(r.summary||r.title||"")}</div><div style="margin-bottom:10px">${statBadge(r.status||"")} ${r.severity?statBadge(r.severity):""}</div>
-     <div class="eyebrow" style="margin-bottom:6px">Connected chain</div>${lk.map(x=>drow(x.id,ENT[typeOf(x.id)].label+" — "+nameOf(x),"ok")).join("")||'<div class="empty">No links yet.</div>'}
+     <div class="eyebrow" style="margin-bottom:6px">Connected chain</div>${lk.map(x=>{const _t=typeOf(x.id);return drow(x.id,((ENT[_t]&&ENT[_t].label)||"Record")+" — "+nameOf(x),"ok")}).join("")||'<div class="empty">No links yet.</div>'}
      <button class="btn primary" style="margin-top:12px" onclick="closeDrawer();go('#/e/${typeOf(id)}/${id}')">Open full record →</button>`,"RDR·01")}
 function vendorDelays(){
   const out=[];DB.vendors.forEach(v=>{const owed=DB.actions.filter(a=>a.status==="Open"&&linked(a.id,"vendor").some(x=>x.id===v.id));
@@ -1927,7 +1927,7 @@ Views.entity=(type,id)=>{
       </div>
       <div style="display:grid;gap:14px;align-content:start">
         <div class="panel tight"><div class="panelhead"><span class="eyebrow am">Connected Records</span></div>
-          ${Object.keys(groups).length?Object.entries(groups).map(([t,arr])=>`<div style="margin-bottom:9px"><div class="eyebrow" style="margin-bottom:4px">${esc(ENT[t].plural)}</div>${chips(arr)}</div>`).join(""):'<div class="empty">Nothing linked yet — use ＋ Link or ingest related data.</div>'}</div>
+          ${Object.keys(groups).length?Object.entries(groups).map(([t,arr])=>`<div style="margin-bottom:9px"><div class="eyebrow" style="margin-bottom:4px">${esc(ENT[t]?ENT[t].plural:t)}</div>${chips(arr)}</div>`).join(""):'<div class="empty">Nothing linked yet — use ＋ Link or ingest related data.</div>'}</div>
         <div class="panel tight"><div class="panelhead"><span class="eyebrow">History</span></div>
           <div class="tline">${tl.map(e=>`<div class="tev ${e.action==='delete'?'crit':e.src==='ai'?'am':''}"><div class="td">${fmtDT(e.at)} · ${esc(e.src)}</div><div class="sm">${esc(e.action)} — ${esc((e.summary||"").slice(0,90))}</div></div>`).join("")||'<div class="empty">No history yet.</div>'}</div>
           <div class="flexr" style="margin-top:8px"><input id="qnote" placeholder="Add a note to this record…" style="flex:1"><button class="btn sm" onclick="addQuickNote('${id}')">Add</button></div></div>
@@ -2121,7 +2121,7 @@ async function fetchInboxEmails() {
 
     // Map Supabase rows → DB.emails format
     const mapped = rows.map(row => ({
-      id: row.id,
+      id: "em-" + row.id,
       subject: row.subject || "(no subject)",
       from: row.from_address || row["from"] || "",
       to: row.to_address || row["to"] || "",
@@ -2499,7 +2499,7 @@ function drawGraph(){
 }
 function showGInfo(id){
   const r=rec(id);if(!r)return;const lk=linked(id).slice(0,8);
-  $("#ginfo").innerHTML=`<div class="panel tight rail-c"><div class="eyebrow" style="color:${ENT[typeOf(id)].color};margin-bottom:4px">${ENT[typeOf(id)].label}</div>
+  $("#ginfo").innerHTML=`<div class="panel tight rail-c"><div class="eyebrow" style="color:${(ENT[typeOf(id)]||{}).color||"#888"};margin-bottom:4px">${(ENT[typeOf(id)]||{}).label||"Record"}</div>
   <b>${esc(nameOf(r))}</b><div class="xs mut" style="margin:4px 0">${esc((r.summary||"").slice(0,110))}</div>
   ${chips(lk)}<div class="flexr" style="margin-top:9px"><button class="btn sm primary" onclick="go('#/e/${typeOf(id)}/${id}')">Open →</button>
   <button class="btn sm" onclick="GRAPH.isolate=GRAPH.isolate==='${id}'?null:'${id}';drawGraph()">${GRAPH.isolate===id?"Un-isolate":"Isolate"}</button></div></div>`;
@@ -2636,8 +2636,8 @@ function renderSearch(){
   const q=$("#sinput").value;const hits=localSearch(q,28);
   const groups={};hits.forEach(x=>{(groups[x.t]=groups[x.t]||[]).push(x.r)});
   $("#sres").innerHTML=(q?`<div class="srow sel" onclick="closeSearch();go('#/brain');setTimeout(()=>askBrain(decodeURIComponent('${encodeURIComponent(q)}')),200)"><span style="color:var(--amber2)">⚡ Ask the Brain:</span> "${esc(q)}"</div>`:"")+
-    Object.entries(groups).map(([t,rs])=>`<div class="sgrp">${ENT[t].plural}</div>`+rs.slice(0,6).map(r=>{const h=hospOf(r.id);
-      return `<div class="srow" onclick="closeSearch();go('#/e/${t}/${r.id}')"><span style="color:${ENT[t].color}">${ENT[t].icon}</span> ${esc(nameOf(r)).slice(0,60)}<span class="sm2">${h?esc(h.code):""}</span></div>`}).join("")).join("")||'<div class="empty" style="padding:14px">Type to search hospitals, projects, vendors, WOs, invoices, emails, risks, compliance…</div>';
+    Object.entries(groups).map(([t,rs])=>`<div class="sgrp">${(ENT[t]?ENT[t].plural:t)}</div>`+rs.slice(0,6).map(r=>{const h=hospOf(r.id);
+      return `<div class="srow" onclick="closeSearch();go('#/e/${t}/${r.id}')"><span style="color:${(ENT[t]?ENT[t].color:"#888")}">${(ENT[t]?ENT[t].icon:"•")}</span> ${esc(nameOf(r)).slice(0,60)}<span class="sm2">${h?esc(h.code):""}</span></div>`}).join("")).join("")||'<div class="empty" style="padding:14px">Type to search hospitals, projects, vendors, WOs, invoices, emails, risks, compliance…</div>';
 }
 
 /* ============================ MODALS / FORMS ============================ */

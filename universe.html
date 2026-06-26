@@ -645,7 +645,7 @@ const blankDB=()=>({meta:{version:1,created:nowISO(),seeded:false},
   hospitals:[],projects:[],vendors:[],people:[],emails:[],documents:[],workOrders:[],
   invoices:[],assets:[],risks:[],actions:[],notes:[],deficiencies:[],requirements:[],
   evidence:[],calEvents:[],reports:[],links:[]});
-const defSettings=()=>({voice:true,voiceRate:1.0,pinned:[],motion:"auto",mcpSmartsheet:false,mcpMail:false,mcpDrive:false,preparedBy:"Antoine W. Riley Sr., Director of Systems Maintenance"});
+const defSettings=()=>({voice:true,voiceRate:1.0,pinned:[],motion:"auto",mcpSmartsheet:false,mcpMail:false,mcpDrive:false,apiKey:"",model:"claude-sonnet-4-6",mapboxToken:"",googleTTSKey:"",voiceProvider:"auto",googleVoice:"en-US-Neural2-F",convoMode:false,preparedBy:"Antoine W. Riley Sr., Director of Systems Maintenance"});
 
 const saveDB=debounce(async()=>{await Store.set(DB_KEY,DB)},600);
 const saveAudit=debounce(async()=>{AUDIT=AUDIT.slice(-1200);await Store.set(AUDIT_KEY,AUDIT)},800);
@@ -788,21 +788,26 @@ const AI={
   async call(messages,{useMCP=false,maxTokens=1000}={}){
     const solo=!($("#orb")&&$("#orb").className==="thinking");if(solo)orbThinkSeq("brain");
     try{
-      const proxy=!Store.hasClaude; /* on the site, route through the secure gateway */
-      if(proxy)useMCP=false;        /* live MCP bridges ride Claude auth — Claude-side only */
-      const body={model:"claude-sonnet-4-20250514",max_tokens:maxTokens,messages};
+      const myKey=((SETTINGS&&SETTINGS.apiKey)||"").trim();
+      const myModel=(SETTINGS&&SETTINGS.model)||"claude-sonnet-4-6";
+      const direct=!Store.hasClaude&&!!myKey; /* site + key in Settings → call Anthropic directly, skip the gateway */
+      let proxy=!Store.hasClaude&&!direct;     /* site + no key → route through the gateway */
+      if(proxy||direct)useMCP=false;           /* live MCP bridges ride Claude auth — Claude-side only */
+      const body={model:myModel,max_tokens:maxTokens,messages};
       if(useMCP){const m=this.mcpServers();if(m.length){body.mcp_servers=m;orbSay("Reaching live integrations…",0)}}
       let url="https://api.anthropic.com/v1/messages";const hdr={"Content-Type":"application/json"};
-      if(proxy){
+      if(direct){
+        hdr["x-api-key"]=myKey;hdr["anthropic-version"]="2023-06-01";hdr["anthropic-dangerous-direct-browser-access"]="true";
+      } else if(proxy){
         url="/api/anthropic";
-        if(!CLOUD.ready())throw new Error("Sign in to Cloud Sync (Settings) so the site can use AI through your secure gateway.");
+        if(!CLOUD.ready())throw new Error("Add your Anthropic API key in Settings → AI Engine, or sign in to Cloud Sync, so the site can use AI.");
         try{await CLOUD.ensure()}catch(e){throw new Error("Cloud session expired — sign in again in Settings, then retry.")}
         hdr.Authorization="Bearer "+CLOUD.sess.access_token;
       }
       const res=await fetch(url,{method:"POST",headers:hdr,body:JSON.stringify(body)});
       if(!res.ok){
         const tx=await res.text().catch(()=>"");
-        if(proxy&&res.status===404)throw new Error("AI gateway not deployed yet — add pages/api/anthropic.js plus the Vercel env vars (see PROXY-SETUP), then redeploy.");
+        if(proxy&&res.status===404)throw new Error("AI gateway didn't respond (404). Add your Anthropic API key in Settings → AI Engine — that runs AI directly and skips the gateway.");
         if(proxy&&res.status===413)throw new Error("That payload is too large for the site gateway (~3 MB). Ingest this file inside Claude instead.");
         let j=null;try{j=JSON.parse(tx)}catch(e){}
         const m2=j&&j.error?(j.error.message||j.error):null;
@@ -1126,7 +1131,7 @@ function getHospitalHealth(code) {
 }
 
 function opsMapInit(containerId) {
-  const token = localStorage.getItem("ops_mapbox_token") || "";
+  const token = ((SETTINGS&&SETTINGS.mapboxToken)||localStorage.getItem("ops_mapbox_token")||"").trim();
   if (!token) return;
   if (typeof mapboxgl === "undefined") return;
   if (window._opsMap) { window._opsMap.remove(); window._opsMap = null; window._opsMapMarkers = {}; }
@@ -1286,7 +1291,7 @@ Actions: {"action":"flyTo","site":"CODE"} | {"action":"showGroup","group":"dc"|"
 }
 
 Views.map = () => {
-  const token = localStorage.getItem("ops_mapbox_token")||"";
+  const token = ((SETTINGS&&SETTINGS.mapboxToken)||localStorage.getItem("ops_mapbox_token")||"").trim();
   
   if (!token) {
     return `<h1 class="pg">Operations Map</h1>
@@ -1298,7 +1303,7 @@ Views.map = () => {
   <button onclick="
     const t=document.getElementById('ops-token-input').value.trim();
     if(!t.startsWith('pk.')){alert('Token must start with pk.');return;}
-    localStorage.setItem('ops_mapbox_token',t);
+    localStorage.setItem('ops_mapbox_token',t);try{SETTINGS.mapboxToken=t;saveSettings();}catch(e){}
     navigate('map');
   " style="background:var(--amber);color:#1a1200;border:none;padding:9px 18px;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.08em;cursor:pointer">LOAD MAP</button>
   <p style="font-family:var(--mono);font-size:10px;color:var(--ink3);margin-top:10px">Stored locally. Never leaves your browser.</p>
@@ -1339,7 +1344,7 @@ Views.map = () => {
       <div style="display:flex;align-items:center;gap:5px"><div class="ops-legend-dot" style="background:var(--ok)"></div><span style="font-family:var(--mono);font-size:10px;color:var(--ink3)">Healthy</span></div>
       <div style="display:flex;align-items:center;gap:5px"><div class="ops-legend-dot" style="background:var(--warn)"></div><span style="font-family:var(--mono);font-size:10px;color:var(--ink3)">Watch</span></div>
       <div style="display:flex;align-items:center;gap:5px"><div class="ops-legend-dot" style="background:var(--crit)"></div><span style="font-family:var(--mono);font-size:10px;color:var(--ink3)">At Risk</span></div>
-      <button onclick="localStorage.removeItem('ops_mapbox_token');navigate('map')" style="background:none;border:none;color:var(--ink3);font-family:var(--mono);font-size:10px;cursor:pointer;text-decoration:underline">Reset Token</button>
+      <button onclick="localStorage.removeItem('ops_mapbox_token');try{SETTINGS.mapboxToken='';saveSettings();}catch(e){}navigate('map')" style="background:none;border:none;color:var(--ink3);font-family:var(--mono);font-size:10px;cursor:pointer;text-decoration:underline">Reset Token</button>
     </div>
   </div>
   
@@ -1375,8 +1380,8 @@ async function opsMapSendKera() {
   const cmd = input.value.trim();
   if (log) { log.innerHTML += `<div style="color:var(--ink2)">> ${cmd}</div>`; log.scrollTop = log.scrollHeight; }
   if (btn) { btn.disabled=true; btn.textContent="..."; }
-  const apiKey = localStorage.getItem("api_key") || "";
-  const model = localStorage.getItem("model") || "claude-sonnet-4-6";
+  const apiKey = ((SETTINGS&&SETTINGS.apiKey)||localStorage.getItem("api_key")||"").trim();
+  const model = (SETTINGS&&SETTINGS.model)||localStorage.getItem("model")||"claude-sonnet-4-6";
   const reply = await opsMapKeraCommand(cmd, apiKey, model);
   if (log) { log.innerHTML += `<div style="color:var(--cyan2);padding-left:8px;border-left:2px solid var(--cyan)">${reply}</div>`; log.scrollTop = log.scrollHeight; }
   if (btn) { btn.disabled=false; btn.textContent="GO"; }
@@ -2361,6 +2366,7 @@ async function askBrain(qOverride){
     if(BRAIN.length>24)BRAIN=BRAIN.slice(-24);
   }catch(e){BRAIN.push({role:"ai",text:"⚠ "+e.message})}
   if($("#brainlog")){$("#brainlog").innerHTML=BRAIN.map(brainMsg).join("");$("#brainlog").scrollTop=1e9}
+  try{const _a=BRAIN.filter(m=>m.role==='ai').slice(-1)[0];if(_a&&_a.text&&(SETTINGS.voice||CONVO))speak(_a.text);}catch(e){}
 }
 
 /* ============================ DAILY BRIEFING & VOICE ============================ */
@@ -2374,22 +2380,84 @@ async function runBriefing(){
     target.innerText=r.text;if(SETTINGS.voice)speak(r.text);audit("briefing",null,null,"Daily briefing generated","ai");
   }catch(e){target.innerText=e.message}
 }
-function speak(text){
-  if(!text)return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text.slice(0,1400));u.rate=SETTINGS.voiceRate||1;
-  orb("speaking");u.onend=u.onerror=()=>orbOff();
-  const v=speechSynthesis.getVoices().find(v=>/Google US English|Samantha|Aria|Natural/i.test(v.name));if(v)u.voice=v;speechSynthesis.speak(u)}catch(e){toast("Voice unavailable in this browser","am")}
-}
+let CONVO=false;
+function speak(text){ Speech.say(text); }
+const Speech = {
+  audio:null, chunks:[], idx:0, on:false,
+  playing(){ return this.on; },
+  stop(){
+    this.on=false; this.chunks=[]; this.idx=0;
+    try{ if(this.audio){ this.audio.onended=null; this.audio.onerror=null; this.audio.pause(); this.audio.src=""; } }catch(e){}
+    this.audio=null;
+    try{ speechSynthesis.cancel(); }catch(e){}
+    orbOff();
+  },
+  _afterEnd(){
+    this.on=false; orbOff();
+    if(CONVO && SETTINGS && SETTINGS.convoMode){ setTimeout(()=>{ if(!REC && !Speech.on) toggleMic(); }, 350); }
+  },
+  splitSentences(t){
+    const parts=(t||"").replace(/\s+/g," ").trim().match(/[^.!?]+[.!?]*/g)||[t];
+    const out=[]; let cur="";
+    for(const p of parts){ if((cur+" "+p).length>460){ if(cur)out.push(cur.trim()); cur=p; } else cur=cur?cur+" "+p:p; }
+    if(cur.trim())out.push(cur.trim());
+    return out.filter(Boolean);
+  },
+  async say(text){
+    if(!text)return; this.stop();
+    const t=String(text).replace(/\[[a-z]+-[a-z0-9]+\]/gi,"").replace(/[*_#`>]/g,"").slice(0,2400);
+    const key=((SETTINGS&&SETTINGS.googleTTSKey)||"").trim();
+    if(key && (SETTINGS.voiceProvider||"auto")!=="device"){
+      try{ this.chunks=this.splitSentences(t); this.idx=0; this.on=true; orb("speaking"); await this._play(key); return; }
+      catch(e){ this.on=false; toastOnce("ttsfb","Human voice unavailable — using this device's voice ("+(e.message||"error").slice(0,60)+")","am"); }
+    }
+    this._device(t);
+  },
+  async _play(key){
+    if(!this.on) return;
+    if(this.idx>=this.chunks.length){ this._afterEnd(); return; }
+    const voice=(SETTINGS&&SETTINGS.googleVoice)||"en-US-Neural2-F";
+    const body={input:{text:this.chunks[this.idx]},voice:{languageCode:voice.slice(0,5),name:voice},audioConfig:{audioEncoding:"MP3",speakingRate:Math.max(0.5,Math.min(2,SETTINGS.voiceRate||1))}};
+    const r=await fetch("https://texttospeech.googleapis.com/v1/text:synthesize?key="+encodeURIComponent(key),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    if(!r.ok){ const tx=await r.text().catch(()=>""); throw new Error("Google TTS "+r.status+" "+tx.slice(0,100)); }
+    const j=await r.json(); if(!j.audioContent) throw new Error("empty audio");
+    const a=new Audio("data:audio/mp3;base64,"+j.audioContent); this.audio=a;
+    a.onended=()=>{ this.idx++; this._play(key).catch(()=>{ this._afterEnd(); }); };
+    a.onerror=()=>{ this.idx++; this._play(key).catch(()=>{ this._afterEnd(); }); };
+    await a.play();
+  },
+  _device(text){
+    try{
+      speechSynthesis.cancel();
+      const u=new SpeechSynthesisUtterance(text.slice(0,1600));
+      u.rate=SETTINGS.voiceRate||1;
+      const v=this._bestVoice(); if(v)u.voice=v;
+      this.on=true; orb("speaking");
+      u.onend=u.onerror=()=>{ this._afterEnd(); };
+      speechSynthesis.speak(u);
+    }catch(e){ this.on=false; orbOff(); toast("Voice unavailable in this browser","am"); }
+  },
+  _bestVoice(){
+    const vs=speechSynthesis.getVoices()||[];
+    const pref=[/Google US English/i,/Samantha/i,/Aria/i,/Jenny/i,/Ava/i,/Natural/i,/Siri/i,/Neural/i];
+    for(const re of pref){ const v=vs.find(v=>re.test(v.name)); if(v)return v; }
+    return vs.find(v=>/en[-_]US/i.test(v.lang))||vs[0]||null;
+  }
+};
 let REC=null;
 function toggleMic(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(REC){ REC.stop(); CONVO=false; return; }
+  if(Speech.playing()){ Speech.stop(); CONVO=false; return; }
   if(!SR){toast("Speech recognition not supported here — type into the Brain instead.","am");return}
-  if(REC){REC.stop();return}
-  REC=new SR();REC.lang="en-US";REC.interimResults=false;$("#micbtn").classList.add("on");orb("listening","Listening…");
+  CONVO=!!(SETTINGS&&SETTINGS.convoMode);
+  REC=new SR();REC.lang="en-US";REC.interimResults=false;const _mb=$("#micbtn");if(_mb)_mb.classList.add("on");orb("listening","Listening…");
   REC.onresult=e=>{const t=e.results[0][0].transcript;toast("🎙 "+t);
+    if(/^\s*(stop|cancel|never ?mind|that's all|thank you)\s*$/i.test(t)){CONVO=false;return}
     if(/briefing/i.test(t))runBriefing();
     else if(/^(add|new) note /i.test(t)){const txt=t.replace(/^(add|new) note /i,"");addRec("note",{title:"Voice note",text:txt});toast("Note saved","ok")}
     else{go("#/brain");setTimeout(()=>askBrain(t),250)}};
-  REC.onend=()=>{REC=null;$("#micbtn").classList.remove("on");orbOff()};REC.onerror=REC.onend;
+  REC.onend=()=>{REC=null;const b=$("#micbtn");if(b)b.classList.remove("on");if(!Speech.playing())orbOff()};REC.onerror=REC.onend;
   REC.start();
 }
 
@@ -2504,10 +2572,20 @@ Views.settings=()=>`<div class="view"><div class="pghead"><div class="grow"><div
       <div class="formrow"><label>Prepared by</label><input value="${esc(SETTINGS.preparedBy)}" onchange="SETTINGS.preparedBy=this.value;saveSettings()"></div>
       <div class="formrow"><label>Voice replies</label><div><label class="sm"><input type="checkbox" ${SETTINGS.voice?"checked":""} onchange="SETTINGS.voice=this.checked;saveSettings()"> Speak briefings & answers</label></div></div>
       <div class="formrow"><label>Motion</label><select onchange="SETTINGS.motion=this.value;saveSettings();document.body.classList.toggle('no-motion',this.value==='off');render()"><option value="auto" ${SETTINGS.motion!=="off"?"selected":""}>Full motion</option><option value="off" ${SETTINGS.motion==="off"?"selected":""}>Reduced motion</option></select></div>
-      <div class="formrow"><label>Voice rate</label><input type="number" step="0.1" min="0.6" max="1.6" value="${SETTINGS.voiceRate}" onchange="SETTINGS.voiceRate=parseFloat(this.value)||1;saveSettings()"></div></div>
+      <div class="formrow"><label>Voice rate</label><input type="number" step="0.1" min="0.6" max="1.6" value="${SETTINGS.voiceRate}" onchange="SETTINGS.voiceRate=parseFloat(this.value)||1;saveSettings()"></div>
+      <div class="formrow"><label>Voice style</label><select onchange="SETTINGS.voiceProvider=this.value;saveSettings()"><option value="auto" ${(!SETTINGS.voiceProvider||SETTINGS.voiceProvider==="auto")?"selected":""}>Human (Google) — uses the key below</option><option value="device" ${SETTINGS.voiceProvider==="device"?"selected":""}>This device's built-in voice</option></select></div>
+      <div class="formrow"><label>Human voice key</label><input type="password" placeholder="AIza..." value="${esc(SETTINGS.googleTTSKey||"")}" onchange="SETTINGS.googleTTSKey=this.value.trim();saveSettings();toast('Voice key saved — synced to all your devices','ok')"></div>
+      <div class="formrow"><label>Voice</label><select onchange="SETTINGS.googleVoice=this.value;saveSettings()">${[["en-US-Neural2-F","Aria — warm female"],["en-US-Neural2-G","Grace — bright female"],["en-US-Studio-O","Olivia — conversational"],["en-US-Neural2-J","Marcus — male"],["en-US-Neural2-D","Daniel — deep male"]].map(o=>`<option value="${o[0]}" ${(SETTINGS.googleVoice||"en-US-Neural2-F")===o[0]?"selected":""}>${o[1]}</option>`).join("")}</select></div>
+      <div class="formrow"><label>Conversation mode</label><div><label class="sm"><input type="checkbox" ${SETTINGS.convoMode?"checked":""} onchange="SETTINGS.convoMode=this.checked;saveSettings()"> Hands-free — keep listening after each reply (say "stop" to end)</label></div></div>
+      <div class="xs mut2" style="margin-top:6px">Human voices use Google Cloud Text-to-Speech (very natural, works on every device). Key: <a href="https://console.cloud.google.com" target="_blank" style="color:var(--cyan)">console.cloud.google.com</a> → enable <b>Cloud Text-to-Speech API</b> → APIs &amp; Services → Credentials → Create API key. No key? It automatically falls back to this device's best built-in voice. Tap the orb or ◉ Voice to talk.</div></div>
     <div class="panel"><div class="panelhead"><span class="eyebrow">Live Integrations (Brain)</span></div>
       <div class="sm mut" style="margin-bottom:8px">When on, the Brain can pull live data through your connected MCP bridges. Off keeps answers strictly to ingested memory. Bridges ride your Claude connection, so they run inside Claude; on keraos.cc the Brain answers from ingested memory.</div>
       ${[["mcpSmartsheet","Smartsheet"],["mcpMail","Superhuman Mail"],["mcpDrive","Google Drive"]].map(([k,l])=>`<label class="sm" style="display:block;padding:4px 0"><input type="checkbox" ${SETTINGS[k]?"checked":""} onchange="SETTINGS['${k}']=this.checked;saveSettings();render()"> ${l}</label>`).join("")}</div>
+    <div class="panel"><div class="panelhead"><span class="eyebrow am">AI Engine</span></div>
+      <div class="sm mut" style="margin-bottom:8px">Your Anthropic API key powers the AI Brain and the Operations Map. It's saved to your synced settings, so it follows you to every device once you're signed into Cloud Sync. <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--cyan)">Get a key →</a></div>
+      <div class="formrow"><label>Anthropic API key</label><input type="password" placeholder="sk-ant-..." value="${esc(SETTINGS.apiKey||"")}" onchange="SETTINGS.apiKey=this.value.trim();saveSettings();toast('AI key saved — synced to all your devices','ok')"></div>
+      <div class="formrow"><label>Model</label><select onchange="SETTINGS.model=this.value;saveSettings()"><option value="claude-opus-4-8" ${SETTINGS.model==="claude-opus-4-8"?"selected":""}>Claude Opus 4.8 — most capable</option><option value="claude-sonnet-4-6" ${(!SETTINGS.model||SETTINGS.model==="claude-sonnet-4-6")?"selected":""}>Claude Sonnet 4.6 — balanced (recommended)</option><option value="claude-haiku-4-5-20251001" ${SETTINGS.model==="claude-haiku-4-5-20251001"?"selected":""}>Claude Haiku 4.5 — fastest &amp; cheapest</option></select></div>
+      <div class="xs mut2" style="margin-top:8px">Enter the key once here. When a key is set, the Brain calls Anthropic directly — it works on any device and doesn't depend on the gateway being deployed.</div></div>
     <div class="panel rail-c"><div class="panelhead"><span class="eyebrow cy">Cloud Sync · Supabase</span><span class="pid">SYN·01</span></div>
       <div class="sm mut" style="margin-bottom:9px">One database for every device — phone, laptop, keraos.cc. Status: <b>${Store.env==="cloud"&&!CLOUD.down?"connected · live sync":CLOUD.cfg&&CLOUD.sess?"configured · cloud unreachable, running on this device's mirror":CLOUD.cfg?"configured · signed out":"not configured"}</b></div>
       <div class="formrow"><label>Project URL</label><input id="ccUrl" placeholder="https://xxxx.supabase.co" value="${esc(CLOUD.cfg&&CLOUD.cfg.url||"")}"></div>

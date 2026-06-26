@@ -935,13 +935,15 @@ function portfolioContext(){
 function snapshotFor(query,max=34){
   const hits=localSearch(query,max);
   const base=hits.length?hits.map(x=>x.r):[];
-  // Always include hospitals + anything critical/overdue so the brain has situational awareness
+  // Always surface the most recently ingested documents & emails so the brain sees new uploads immediately
+  const recent=[...((DB.documents||[]).slice(-8)),...((DB.emails||[]).slice(-8))];
+  // Always include anything critical/overdue so the brain has situational awareness
   const extra=[...DB.risks.filter(r=>r.status==="Open"&&(r.severity==="critical"||r.severity==="high")),
     ...DB.actions.filter(a=>a.status==="Open"&&isPast(a.due)),
     ...DB.workOrders.filter(w=>!["Completed","Verified","Closed"].includes(w.status)&&isPast(w.due)),
     ...DB.invoices.filter(i=>!["Paid","Archived"].includes(i.status)&&isPast(i.dueDate))].slice(0,12);
   const seen=new Set(),rows=[];
-  for(const r of [...base,...extra]){if(seen.has(r.id))continue;seen.add(r.id);
+  for(const r of [...recent,...base,...extra]){if(seen.has(r.id))continue;seen.add(r.id);
     const t=typeOf(r.id),h=hospOf(r.id);
     rows.push("["+r.id+"] "+ENT[t].label+" | "+(h?h.code+" | ":"")+
       [nameOf(r),r.status,r.severity,r.owner&&("owner:"+r.owner),r.due&&("due:"+r.due),r.dueDate&&("due:"+r.dueDate),r.amount!=null&&fmt$(r.amount),r.vendorName,(r.summary||r.body||r.text||"").slice(0,180)].filter(Boolean).join(" | "));
@@ -1014,7 +1016,12 @@ function commitExtraction(){
   if((ex.openQuestions||[]).length)addRec("note",{title:"Open questions — "+(PENDING.filename||"upload"),text:ex.openQuestions.join("\n"),hospitalId:hosp?hosp.id:null},"ai");
   if(PENDING.sourceKind==="email"){const em=addRec("email",{subject:PENDING.filename||(ex.summary||"Email").slice(0,70),body:(PENDING.raw.text||"").slice(0,20000),from:(ex.people||[])[0]||"",urgency:ex.urgency||3,summary:ex.summary,hospitalId:hosp?hosp.id:null},"ai");link(em.id,doc.id,"document","ai");if(hosp)link(em.id,hosp.id,"site","ai");created.push(em)}
   audit("ingest","document",doc.id,"Ingested "+(PENDING.filename||"pasted text")+" → "+created.length+" records","ai");
-  PENDING=null;toast(created.length+" records created and linked","ok");go("#/e/document/"+doc.id);
+  PENDING=null;
+  const _tx=$("#pastebox");if(_tx)_tx.value="";
+  const _ib=$("#isEmail");if(_ib)_ib.checked=false;
+  const _rv=$("#reviewbox");if(_rv)_rv.innerHTML="";
+  const _pb=$("#procbox");if(_pb)_pb.innerHTML='<div class="procwrap"><div class="proclog"><div class="ok">✓ COMPLETE — '+created.length+" item"+(created.length>1?"s":"")+' committed to Kera\'s memory. Ready for the next upload.</div></div></div>';
+  toast("✓ Complete — "+created.length+" item"+(created.length>1?"s":"")+" added to Kera's memory","ok");
 }
 
 /* ============================ SHARED RENDER HELPERS ============================ */
@@ -1966,6 +1973,11 @@ Views.ingest=()=>`<div class="view"><div class="pghead"><div class="grow"><div c
   </div><div id="reviewbox" style="margin-top:16px"></div></div>`;
 function procLog(line,cls=""){const el=$("#proclog");if(!el)return;el.insertAdjacentHTML("beforeend",`<div class="${cls}">${esc(line)}</div>`);el.scrollTop=el.scrollHeight}
 function showProc(name){$("#procbox").innerHTML=`<div class="procwrap"><div class="scanline"></div><div class="proclog" id="proclog"></div></div>`;procLog("▶ INGEST PROTOCOL :: "+name,"am")}
+function procDone(ok,msg){
+  const box=$("#procbox");if(!box)return;
+  const sl=box.querySelector(".scanline");if(sl)sl.remove();        // stop the scan line
+  procLog((ok?"✓ COMPLETE — ":"✗ FAILED — ")+msg,ok?"ok":"dim");
+}
 async function runExtraction(blocks,raw,filename,sourceKind){
   if(aiUnavailableNote()){toast(aiUnavailableNote(),"am");return}
   if(!Store.hasClaude){const approx=blocks.reduce((s,b)=>s+((b.source&&b.source.data)?b.source.data.length:(b.text||"").length),0);
@@ -1984,7 +1996,8 @@ async function runExtraction(blocks,raw,filename,sourceKind){
     await step("relationship mapping → review board","ok");
     PENDING={ex,raw,filename,sourceKind};
     renderReview();
-  }catch(e){orbDone();procLog("✗ "+e.message,"dim");toast(e.message,"err")}
+    procDone(true,"extraction done — review & commit below");
+  }catch(e){orbDone();procDone(false,e.message);toast(e.message,"err")}
 }
 function xplodeSVG(ex){
   const groups=[["Hospital",ex.hospital?1:0,"var(--amber)"],["Vendors",(ex.vendors||[]).length,"#9d8cff"],["Projects",(ex.projects||[]).length,"var(--cyan)"],["Work Orders",(ex.workOrders||[]).length,"#5fb6c9"],["Invoice",ex.invoice?1:0,"#d9b35f"],["People",(ex.people||[]).length,"#3fc492"],["Risks",(ex.risks||[]).length,"var(--crit)"],["Actions",(ex.actionItems||[]).length,"#f0c674"],["Assets",(ex.assets||[]).length,"#7d96ab"]].filter(g=>g[1]>0);
@@ -2102,7 +2115,7 @@ async function fetchInboxEmails() {
       INBOX_CFG.url + "/rest/v1/ingested_emails?order=created_at.desc&limit=100",
       { headers: { apikey: INBOX_CFG.key, Authorization: "Bearer " + INBOX_CFG.key } }
     );
-    if (!r.ok) { console.warn("[inbox] fetch failed:", r.status); return; }
+    if (!r.ok) { console.warn("[inbox] fetch failed:", r.status); toastOnce("inboxerr","Cloud inbox unreachable ("+r.status+"). Check Cloud Sync is connected and the server fix is deployed.","am"); return; }
     const rows = await r.json();
     if (!Array.isArray(rows)) return;
 
@@ -2126,6 +2139,7 @@ async function fetchInboxEmails() {
     const newEmails = mapped.filter(e => !existingIds.has(e.id));
     if (newEmails.length > 0) {
       DB.emails = [...newEmails, ...(DB.emails || [])];
+      toast(newEmails.length+" new email"+(newEmails.length>1?"s":"")+" from cloud inbox","ok");
     }
 
     _inboxLoaded = true;

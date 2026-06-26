@@ -484,6 +484,42 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{animation:none
 <div id="drawer"><div class="dhead"><span class="eyebrow am" id="dtitle">Detail</span><span class="pid" id="dpid"></span><button class="btn sm right" onclick="closeDrawer()">Close ✕</button></div><div class="dbody" id="dbody"></div></div>
 <div id="modalveil"><div id="modalbox"></div></div>
 <div id="sov"><div id="sbox"><input id="sinput" placeholder="Type to search · Enter to open · first row asks the Brain"><div id="sres"></div></div></div>
+<style>
+#bottombar{display:none}
+#voicemode{position:fixed;inset:0;z-index:80;display:none;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 38%,rgba(13,30,46,.97),rgba(4,7,12,.99));backdrop-filter:blur(8px)}
+#voicemode.open{display:flex}
+#vmclose{position:absolute;top:calc(16px + env(safe-area-inset-top,0px));right:18px;background:var(--glass2);border:1px solid var(--stroke2);color:var(--silver);width:38px;height:38px;border-radius:50%;font-size:15px;cursor:pointer;z-index:2}
+#vmorb{width:170px;height:170px;border-radius:50%;cursor:pointer;position:relative;background:radial-gradient(circle at 36% 30%,rgba(120,220,240,.4),rgba(20,40,60,.9) 58%,rgba(6,10,16,.96));border:1px solid rgba(86,214,232,.5);box-shadow:0 0 50px rgba(86,214,232,.25),inset 0 0 40px rgba(86,214,232,.15);transition:box-shadow .3s,transform .3s}
+#voicemode.listening #vmorb{box-shadow:0 0 70px rgba(86,214,232,.5),inset 0 0 40px rgba(86,214,232,.25);animation:vmpulse 1.4s var(--ease) infinite}
+#voicemode.speaking #vmorb{box-shadow:0 0 70px rgba(232,163,61,.45),inset 0 0 40px rgba(232,163,61,.22);border-color:rgba(232,163,61,.5);animation:vmpulse 1s var(--ease) infinite}
+@keyframes vmpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+#vmstatus{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--cyan2);margin-top:34px;min-height:18px;text-align:center}
+#voicemode.speaking #vmstatus{color:var(--amber2)}
+#vmtranscript{margin-top:20px;max-width:min(680px,88vw);max-height:36vh;overflow-y:auto;width:100%;padding:0 8px}
+#vmtranscript .vmline{font-size:14px;line-height:1.6;margin-bottom:12px;color:var(--ink2)}
+#vmtranscript .vmline.you{color:var(--ink);text-align:right}
+#vmtranscript .vmline .who{font-family:var(--mono);font-size:9px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink3);display:block;margin-bottom:2px}
+#vmhint{position:absolute;bottom:calc(26px + env(safe-area-inset-bottom,0px));font-size:11px;color:var(--ink3);text-align:center;padding:0 16px}
+@media (max-width:900px){
+  #bottombar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:62;height:calc(58px + env(safe-area-inset-bottom,0px));padding-bottom:env(safe-area-inset-bottom,0px);background:rgba(9,14,22,.95);backdrop-filter:blur(14px);border-top:1px solid var(--stroke2);align-items:stretch;justify-content:space-around}
+  #bottombar .bb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:none;border:none;color:var(--ink3);font-family:var(--mono);font-size:8px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;transition:color .15s;padding:0}
+  #bottombar .bb .bbi{font-size:17px;line-height:1}
+  #bottombar .bb.active{color:var(--cyan2)}
+  #bottombar .bb.active .bbi{filter:drop-shadow(0 0 8px rgba(86,214,232,.5))}
+  #bottombar .bb.voice{flex:0 0 60px}
+  #bottombar .bb.voice .bbi{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-top:-20px;background:radial-gradient(circle at 36% 30%,rgba(120,220,240,.4),rgba(20,40,60,.92) 60%);border:1px solid rgba(86,214,232,.55);box-shadow:0 0 20px rgba(86,214,232,.3);font-size:20px}
+  #orbdock{display:none}
+  #topbtns .tbtn.mic{display:none}
+}
+</style>
+<nav id="bottombar"></nav>
+<div id="voicemode">
+  <button id="vmclose" onclick="closeVoiceMode()" title="Exit voice">✕</button>
+  <div id="vmorb" onclick="toggleMic()"></div>
+  <div id="vmstatus">Tap the orb to talk</div>
+  <div id="vmtranscript"></div>
+  <div id="vmhint">Tap the orb to talk · say "stop" to end · ✕ to exit</div>
+</div>
 <div id="toasts"></div>
 <div id="printdock"></div>
 <script>
@@ -555,7 +591,7 @@ function cloudChip(){const el=$("#cloudchip");if(!el)return;
   if(Store.env==="cloud"&&!CLOUD.down){el.innerHTML='<span class="led ok"></span> CLOUD SYNC'}
   else if(CLOUD.cfg&&CLOUD.sess){el.innerHTML='<span class="led crit"></span> CLOUD DOWN · LOCAL'}
   else if(CLOUD.cfg){el.innerHTML='<span class="led warn"></span> CLOUD: SIGNED OUT'}
-  else el.innerHTML='<span class="led idle"></span> '+(Store.hasClaude?"CLAUDE STORE":"LOCAL STORE")}
+  else el.innerHTML='<span class="led idle"></span> '+(Store.hasClaude?"DEVICE STORE":"LOCAL STORE")}
 const Store={
   env:"local",
   hasClaude:(typeof window!=="undefined"&&!!window.storage),
@@ -634,6 +670,7 @@ async function cloudPull(){
   const st=await CLOUD.kv("GET",SET_KEY).catch(()=>null);if(st)SETTINGS=Object.assign(defSettings(),st);
   await Store.localSet(DB_KEY,JSON.stringify(DB));await Store.localSet(AUDIT_KEY,JSON.stringify(AUDIT));await Store.localSet(SET_KEY,JSON.stringify(SETTINGS));
   Object.keys(blankDB()).forEach(k=>{if(DB[k]===undefined)DB[k]=k==="meta"?{}:[]});
+  await purgeSeededReqs();
   toast("Pulled latest from cloud","ok");render();
 }
 function cloudSignOut(){CLOUD.signOut();Store.env=Store.hasClaude?"claude":"local";cloudChip();render();toast("Signed out — running on this device only","am")}
@@ -753,7 +790,7 @@ function seed(){
   const CATS=["Project Scope","Project","Utility Systems","Safety Systems","Fire Drills","Critical Systems","Utility Systems","Fire Alarm & Suppression","Infrastructure","Temp / Humidity & Critical Env","ILSM & Above-Ceiling","PM Evidence","AHJ / Permits","EOC Rounds & Committee"];
   DB.meta.PROJECTCats=CATS;
   const REQT=[["Critical Systems","Generator monthly load test","monthly"],["Critical Systems","Generator annual load-bank test","annual"],["Critical Systems","ATS monthly transfer test","monthly"],["Fire Drills","Fire drill — per shift per quarter","quarterly"],["Fire Alarm & Suppression","Fire alarm system inspection","annual"],["Fire Alarm & Suppression","Sprinkler inspection","quarterly"],["Safety Systems","Fire extinguisher inspection","monthly"],["Safety Systems","Smoke / fire damper testing","per cycle"],["Utility Systems","Utility Systems system inspection","annual"],["Infrastructure","Infrastructure program review","quarterly"],["Infrastructure","Legionella sampling / control evidence","per plan"],["Temp / Humidity & Critical Env","OR temp & humidity logs","monthly"],["Utility Systems","High-risk utility PM completion","monthly"],["ILSM & Above-Ceiling","Above-ceiling permit log current","ongoing"],["EOC Rounds & Committee","EOC rounds completed","quarterly"]];
-  DB.hospitals.forEach(h=>{REQT.forEach(([cat,title,freq])=>{const q=addRec("requirement",{title,category:cat,freq,hospitalId:h.id,status:"Missing Evidence",stdRef:"",seeded:true},"seed");link(q.id,h.id,"site","seed")})});
+  /* Joint Commission / compliance requirements are no longer seeded — this system tracks projects only */
   DB.meta.seeded=true;
   audit("seed","note",null,"Seeded 10-hospital MedStar portfolio, vendors, live projects/risks/actions, PROJECT readiness framework","seed");
 }
@@ -821,8 +858,8 @@ const AI={
     } finally { if(solo)orbDone() }
   },
   parseJSON(text){
-    let t=(text||"").replace(/```json/gi,"```").trim();
-    const m=t.match(/```([\s\S]*?)```/);if(m)t=m[1].trim();
+    let t=(text||"").trim().replace(/```json/gi,"```");
+    const m=t.match(/```([\s\S]*?)```/);if(m)t=m[1].trim();else t=t.replace(/```/g,"").trim();
     const s=t.indexOf("{"),e=t.lastIndexOf("}");if(s>=0&&e>s)t=t.slice(s,e+1);
     return JSON.parse(t);
   },
@@ -874,7 +911,7 @@ const EXTRACT_SPEC=`Return ONLY JSON, no markdown:
 async function extractFromContent(blocks,filename){
   const sys=portfolioContext()+"\nYou extract structured operations intelligence from raw inputs (files, emails, notes) for a hospital facilities portfolio. Map hospital references to codes. Use synonyms: "+JSON.stringify(HOSP_SYN)+". Never invent data not present. "+EXTRACT_SPEC.replace("__CATS__",(DB.meta.PROJECTCats||[]).join(", "));
   const content=[{type:"text",text:sys+"\n\nINPUT ("+(filename||"pasted text")+"):"} , ...blocks];
-  return AI.json([{role:"user",content}],{maxTokens:1000});
+  return AI.json([{role:"user",content}],{maxTokens:8000});
 }
 async function fileToBlocks(file){
   const name=file.name.toLowerCase();
@@ -906,7 +943,7 @@ function commitExtraction(){
   (ex.people||[]).forEach(p=>resolve("person",p));
   (ex.projects||[]).forEach(p=>resolve("project",p));
   (ex.assets||[]).forEach(a=>{let r=fuzzyFind("asset",a)||addRec("asset",{name:a,hospitalId:hosp?hosp.id:null},"ai");link(doc.id,r.id,"detected","ai");if(hosp)link(r.id,hosp.id,"site","ai");linkedTo.push(r)});
-  (ex.workOrders||[]).forEach(w=>{const existing=DB.workOrders.find(x=>x.number&&w.number&&String(x.number)===String(w.number));const r=existing||addRec("workorder",{number:w.number||"",title:w.description||("WO "+(w.number||"")),status:w.status&&WO_FLOW.includes(w.status)?w.status:"Request",due:w.due||null,trade:w.trade||"",asset:w.asset||"",hospitalId:hosp?hosp.id:null},"ai");if(!existing)created.push(r);link(doc.id,r.id,"source","ai");if(hosp)link(r.id,hosp.id,"site","ai")});
+  /* Work Orders are not used in this system — ingested work orders are not created */
   if(ex.invoice&&(ex.invoice.number||ex.invoice.amount)){
     const iv=ex.invoice;const dup=DB.invoices.find(x=>(x.number&&iv.number&&x.number===iv.number&&(x.vendorName||"").toLowerCase()===(iv.vendorName||"").toLowerCase())||(x.amount===iv.amount&&x.vendorName===iv.vendorName&&Math.abs((daysFrom(x.date)||0)-(daysFrom(iv.date)||0))<=3));
     const r=addRec("invoice",{number:iv.number||"",vendorName:iv.vendorName||"",date:iv.date||todayISO(),dueDate:iv.dueDate||null,amount:iv.amount||0,tax:iv.tax||0,po:iv.po||"",wo:iv.wo||"",terms:iv.terms||"",lineItems:iv.lineItems||[],status:"Uploaded",hospitalId:hosp?hosp.id:null,duplicateOf:dup?dup.id:null,flags:[!iv.po&&"Missing PO",!iv.wo&&"No WO backup",dup&&"Possible duplicate"].filter(Boolean)},"ai");
@@ -1426,6 +1463,63 @@ Views.help=()=>{return `
   <div class="shortcut"><span class="desc">Global search</span><span class="key">Search bar</span></div>
 </div>
 
+<div class="tip-section">First-Time Setup — Do These Once</div>
+<div class="tip-grid">
+  <div class="tip-card">
+    <h3>⚙ Turn On AI</h3>
+    <ul>
+      <li>Settings → <b>AI Engine</b> → paste your Anthropic key (starts with <code>sk-ant-</code>)</li>
+      <li>Pick a model: Sonnet 4.6 (balanced), Haiku 4.5 (cheapest), Opus 4.8 (most capable)</li>
+      <li>Saved once, follows you to every device</li>
+    </ul>
+  </div>
+  <div class="tip-card">
+    <h3>☁ Sync Across Devices</h3>
+    <ul>
+      <li>Settings → <b>Cloud Sync</b> → enter Supabase URL, anon key, email, password</li>
+      <li>Connect &amp; Sign In, then choose <b>Load cloud data</b></li>
+      <li>Top bar turns green <b>CLOUD SYNC</b> — phone &amp; laptop share one database</li>
+      <li>Every save writes to your device first, then the cloud — an outage never loses work</li>
+    </ul>
+  </div>
+  <div class="tip-card">
+    <h3>✉ Live Email Inbox</h3>
+    <ul>
+      <li>Mail sent to <code>universe@keraos.cc</code> lands in <b>Email Intel</b></li>
+      <li>Or paste any email into <b>Ingest</b> with "treat as email" checked</li>
+      <li>Long thread? Paste just the message that matters — cut signatures and reply chains</li>
+    </ul>
+  </div>
+</div>
+
+<div class="tip-section">Voice &amp; Hands-Free</div>
+<div class="tip-grid">
+  <div class="tip-card">
+    <h3>🎤 Talk to Kera</h3>
+    <ul>
+      <li>Tap the <b>orb</b> (bottom-right) or the <b>🎤</b> in the Brain — then talk</li>
+      <li>Say "briefing" for your rundown, or "add note ___" to capture a thought</li>
+      <li>Tap again any time to stop</li>
+    </ul>
+  </div>
+  <div class="tip-card">
+    <h3>🔊 Human Voices</h3>
+    <ul>
+      <li>Settings → <b>Voice</b> → add a Google voice key for natural, human speech</li>
+      <li>Pick your voice (Aria, Olivia, Marcus…) and speaking rate</li>
+      <li>No key? It falls back to your device's best built-in voice automatically</li>
+    </ul>
+  </div>
+  <div class="tip-card">
+    <h3>💬 Conversation Mode</h3>
+    <ul>
+      <li>Settings → Voice → turn on <b>Conversation mode</b></li>
+      <li>Hands-free back-and-forth: it listens, answers aloud, then listens again</li>
+      <li>Say "stop" or tap the mic to end</li>
+    </ul>
+  </div>
+</div>
+
 <div class="tip-section">Talking to Kera — AI Commands That Work</div>
 <div style="margin-bottom:24px">
   <p style="color:var(--ink2);font-size:13px;margin-bottom:12px;line-height:1.7">Type naturally in the Terminal. Kera reads your full context — sites, projects, hospitals, vendors, calendar, emails. She doesn't need formal commands.</p>
@@ -1441,7 +1535,7 @@ Views.help=()=>{return `
     <div class="tip-card">
       <h3>Site & Hospital Intel</h3>
       <div class="cmd-ex">What's the status at Georgetown?</div>
-      <div class="cmd-ex">Which sites have open work orders?</div>
+      <div class="cmd-ex">What needs attention at Harbor this week?</div>
       <div class="cmd-ex">Update MWHC — boilers offline for PM this week</div>
       <div class="cmd-ex">Show me a risk summary for Southern Maryland</div>
       <div class="cmd-ex">What vendors are active at Franklin Square?</div>
@@ -1744,7 +1838,7 @@ Views.vendors=()=>listView("Vendors","vendor",DB.vendors,
   `<button class="btn" onclick="quickAdd('vendor')">＋ New Vendor</button>`);
 Views.hospitals=()=>`<div class="view"><div class="pghead"><div class="grow"><div class="eyebrow am">Sites</div><h1 class="pg">Hospital Command Nodes</h1></div></div>
   <div class="grid g3">${DB.hospitals.map(h=>{const s=hospSeverity(h);return `<div class="htile" onclick="go('#/e/hospital/${h.id}')"><div class="hc"><span class="led ${s==='ok'?'ok':s}"></span>${esc(h.code)}<span class="pin ${(SETTINGS.pinned||[]).includes(h.id)?'on':''}" onclick="togglePin('${h.id}',event)" title="Pin to dashboard">★</span></div><div class="hn">${esc(h.name)}</div>
-  <div class="hstats"><div class="hstat"><b>${byHosp(DB.projects,h.id).filter(p=>p.status==="Active").length}</b>projects</div><div class="hstat"><b>${byHosp(openWOs(),h.id).length}</b>WOs</div><div class="hstat"><b>${byHosp(openInvs(),h.id).length}</b>invoices</div><div class="hstat"><b>${byHosp(DB.requirements,h.id).filter(q=>!["Ready","Complete"].includes(q.status)).length}</b>PROJECT gaps</div></div></div>`}).join("")}</div></div>`;
+  <div class="hstats"><div class="hstat"><b>${byHosp(DB.projects,h.id).filter(p=>p.status==="Active").length}</b>projects</div><div class="hstat"><b>${byHosp(openInvs(),h.id).length}</b>invoices</div><div class="hstat"><b>${byHosp(DB.requirements,h.id).filter(q=>!["Ready","Complete"].includes(q.status)).length}</b>PROJECT gaps</div></div></div>`}).join("")}</div></div>`;
 
 /* ---------- generic entity detail (drill-down everywhere) ---------- */
 Views.entity=(type,id)=>{
@@ -1799,7 +1893,7 @@ function hospitalTabs(h){
   if(tab==="emails")body=`<div class="panel tight">${em.map(e=>`<div style="padding:6px 0;border-bottom:1px solid var(--stroke)">${chip(e)} <span class="xs mut2">urgency ${e.urgency||"—"} · ${esc((e.summary||"").slice(0,80))}</span></div>`).join("")||'<div class="empty">No emails ingested for this site.</div>'}</div>`;
   if(tab==="timeline"){const ids=new Set([h.id,...linked(h.id).map(x=>x.id)]);const evs=AUDIT.filter(e=>ids.has(e.entityId)).slice(-25).reverse();
     body=`<div class="panel"><div class="tline">${evs.map(e=>`<div class="tev ${e.src==='ai'?'am':''}"><div class="td">${fmtDT(e.at)}</div><div class="sm">${esc(e.action)} ${esc(e.entityType)} — ${esc((e.summary||"").slice(0,100))}</div></div>`).join("")||'<div class="empty">Quiet so far.</div>'}</div></div>`}
-  return `<div class="tabs">${T("overview","Overview")}${T("workorders","Work Orders ("+wo.length+")")}${T("invoices","Invoices ("+iv.length+")")}${T("PROJECT","PROJECT Compliance")}${T("docs","Documents ("+dc.length+")")}${T("emails","Emails ("+em.length+")")}${T("timeline","Timeline")}</div>${body}`;
+  return `<div class="tabs">${T("overview","Overview")}${T("invoices","Invoices ("+iv.length+")")}${T("PROJECT","PROJECT Compliance")}${T("docs","Documents ("+dc.length+")")}${T("emails","Emails ("+em.length+")")}${T("timeline","Timeline")}</div>${body}`;
 }
 
 /* ============================ INGEST VIEW ============================ */
@@ -2347,7 +2441,7 @@ Views.brain=()=>`<div class="view"><div class="pghead"><div class="grow"><div cl
   <label class="sm mut" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="useMCP" ${(SETTINGS.mcpSmartsheet||SETTINGS.mcpMail||SETTINGS.mcpDrive)&&Store.hasClaude?"":"disabled"}> Pull live Smartsheet / Mail / Drive${Store.hasClaude?"":' <span class="xs mut2">(runs inside Claude)</span>'}</label></div>
   <div class="panel" style="display:flex;flex-direction:column;gap:12px">
     <div id="brainlog">${BRAIN.map(m=>brainMsg(m)).join("")||'<div class="msg sys">Try: "What\u2019s going on at Harbor?" · "Which vendor owes me a proposal?" · "Top 5 issues across all hospitals" · "Draft an update email for Tom about water meters"</div>'}</div>
-    <div class="flexr"><input id="brainin" placeholder="Ask anything about your portfolio…" style="flex:1" autocomplete="off"><button class="btn primary" onclick="askBrain()">Send</button><button class="btn" onclick="speak(BRAIN.filter(m=>m.role==='ai').slice(-1)[0]?.text||'')">▶</button></div></div></div>`;
+    <div class="flexr"><input id="brainin" placeholder="Ask anything about your portfolio…" style="flex:1" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();askBrain()}"><button class="btn" onclick="toggleMic()" title="Talk to Kera">🎤</button><button class="btn primary" onclick="askBrain()">Send</button><button class="btn" onclick="speak(BRAIN.filter(m=>m.role==='ai').slice(-1)[0]?.text||'')" title="Replay last answer">▶</button></div></div></div>`;
 function linkify(t){return esc(t).replace(/\[((?:h|p|v|pe|em|doc|wo|inv|as|rk|ac|nt|df|rq)-[a-z0-9]+)\]/g,(m,id)=>{const r=rec(id);return r?`<a href="#/e/${typeOf(id)}/${id}" style="color:var(--amber2)">[${esc(nameOf(r)).slice(0,30)}]</a>`:m})}
 function brainMsg(m){
   if(m.role==="user")return `<div class="msg user">${esc(m.text)}</div>`;
@@ -2366,7 +2460,7 @@ async function askBrain(qOverride){
     if(BRAIN.length>24)BRAIN=BRAIN.slice(-24);
   }catch(e){BRAIN.push({role:"ai",text:"⚠ "+e.message})}
   if($("#brainlog")){$("#brainlog").innerHTML=BRAIN.map(brainMsg).join("");$("#brainlog").scrollTop=1e9}
-  try{const _a=BRAIN.filter(m=>m.role==='ai').slice(-1)[0];if(_a&&_a.text&&(SETTINGS.voice||CONVO))speak(_a.text);}catch(e){}
+  try{const _a=BRAIN.filter(m=>m.role==='ai').slice(-1)[0];if(_a&&_a.text&&(SETTINGS.voice||CONVO||VOICEMODE))speak(_a.text);}catch(e){}
 }
 
 /* ============================ DAILY BRIEFING & VOICE ============================ */
@@ -2394,7 +2488,7 @@ const Speech = {
   },
   _afterEnd(){
     this.on=false; orbOff();
-    if(CONVO && SETTINGS && SETTINGS.convoMode){ setTimeout(()=>{ if(!REC && !Speech.on) toggleMic(); }, 350); }
+    if((CONVO && SETTINGS && SETTINGS.convoMode) || VOICEMODE){ setTimeout(()=>{ if(!REC && !Speech.on) toggleMic(); }, 350); }
   },
   splitSentences(t){
     const parts=(t||"").replace(/\s+/g," ").trim().match(/[^.!?]+[.!?]*/g)||[t];
@@ -2598,7 +2692,7 @@ Views.settings=()=>`<div class="view"><div class="pghead"><div class="grow"><div
       <button class="btn" onclick="cloudSignOut()" ${CLOUD.sess?"":"disabled"}>Sign Out</button></div>
       <div class="xs mut2" style="margin-top:8px">Every save writes to this device first, then the cloud — an outage never loses work. Same four values on each device, one time each.</div></div>
     <div class="panel"><div class="panelhead"><span class="eyebrow">Memory & Backup</span></div>
-      <div class="sm mut" style="margin-bottom:10px">Engine: <b>${Store.env==="cloud"?"Supabase cloud · live sync":Store.env==="claude"?"Claude persistent storage":"browser localStorage"}</b> · ${Object.keys(ENT).reduce((s,t)=>s+DB[col(t)].length,0)} records · ${DB.links.length} links · ${AUDIT.length} audit events.</div>
+      <div class="sm mut" style="margin-bottom:10px">Engine: <b>${Store.env==="cloud"?"Supabase cloud · live sync":Store.env==="claude"?"On-device storage":"browser localStorage"}</b> · ${Object.keys(ENT).reduce((s,t)=>s+DB[col(t)].length,0)} records · ${DB.links.length} links · ${AUDIT.length} audit events.</div>
       <div class="flexr"><button class="btn" onclick="exportJSON()">⬇ Export Full Backup</button>
       <button class="btn" onclick="$('#importfile').click()">⬆ Import Backup</button><input type="file" id="importfile" accept=".json" style="display:none" onchange="importJSON(this.files[0])">
       <button class="btn danger" onclick="if(confirm('Wipe everything and reseed the MedStar baseline?')){resetAll()}">Reset & Reseed</button></div></div>
@@ -2634,7 +2728,7 @@ async function resetAll(){for(const d of (DB.documents||[]).filter(x=>x.hasFile)
 /* ============================ ROUTER & BOOT ============================ */
 let ROUTE={name:"dashboard"};
 const NAV=[["Command",[["dashboard","◈","Dashboard"],["map","▦","Operations Map"],["hospitals","⬢","Hospitals"],["graph","✦","Knowledge Graph"],["brain","◎","AI Brain"]]],
-  ["Operate",[["ingest","⇣","Ingest Data"],["projects","◧","Projects"],["workorders","⚙","Work Orders"],["invoices","⌸","Invoices"],["email","✉","Email Intel"],["risks","⚠","Risks"],["actions","➤","Actions"],["vendors","⬡","Vendors"]]],
+  ["Operate",[["ingest","⇣","Ingest Data"],["projects","◧","Projects"],["invoices","⌸","Invoices"],["email","✉","Email Intel"],["risks","⚠","Risks"],["actions","➤","Actions"],["vendors","⬡","Vendors"]]],
   ["Learn",[["help","?","Tips & How-To"]]],["Comply & Report",[["PROJECT","☑","PROJECT Compliance"],["calendar","▦","Calendar"],["reports","▥","Reports"],["settings","⚒","Settings"]]]];
 function navBadge(name){
   if(name==="actions")return DB.actions.filter(a=>a.status==="Open"&&isPast(a.due)).length;
@@ -2658,7 +2752,7 @@ function parseRoute(){
 }
 function render(){
   const v=ROUTE.name==="entity"?Views.entity(ROUTE.type,ROUTE.id):(Views[ROUTE.name]||Views.dashboard)();
-  $("#main").innerHTML=v;renderNav();postRender();window.scrollTo(0,0);$("#main").scrollTop=0;
+  $("#main").innerHTML=v;renderNav();renderBottomBar();postRender();window.scrollTo(0,0);$("#main").scrollTop=0;
 }
 function postRender(){
   updateBeacon();countUps();animateRings();
@@ -2674,12 +2768,66 @@ function postRender(){
   if(ROUTE.name==="brain"){const b=$("#brainin");if(b)b.onkeydown=e=>{if(e.key==="Enter")askBrain()};const bl=$("#brainlog");if(bl)bl.scrollTop=1e9}
   if(ROUTE.name==="settings")renderAudit();
 }
+async function purgeSeededReqs(){
+  let changed=false;
+  if(Array.isArray(DB.requirements)&&DB.requirements.some(q=>q&&q.seeded)){
+    const rm=new Set(DB.requirements.filter(q=>q&&q.seeded).map(q=>q.id));
+    DB.requirements=DB.requirements.filter(q=>!(q&&q.seeded));
+    if(Array.isArray(DB.links))DB.links=DB.links.filter(L=>!rm.has(L.a)&&!rm.has(L.b));
+    changed=true;
+  }
+  if(Array.isArray(DB.workOrders)&&DB.workOrders.length){
+    const wo=new Set(DB.workOrders.map(w=>w.id));
+    DB.workOrders=[];
+    if(Array.isArray(DB.links))DB.links=DB.links.filter(L=>!wo.has(L.a)&&!wo.has(L.b));
+    changed=true;
+  }
+  if(changed){try{await Store.set(DB_KEY,DB)}catch(e){}}
+}
+function renderBottomBar(){
+  const bb=document.getElementById("bottombar"); if(!bb)return;
+  const items=[["dashboard","◇","Home"],["brain","◉","Brain"],["__voice__","🎤","Voice"],["email","✉","Inbox"],["map","◈","Map"]];
+  bb.innerHTML=items.map(it=>{
+    const n=it[0];
+    if(n==="__voice__")return `<button class="bb voice" onclick="openVoiceMode()"><span class="bbi">${it[1]}</span></button>`;
+    return `<button class="bb ${ROUTE.name===n?"active":""}" onclick="go('#/${n}')"><span class="bbi">${it[1]}</span>${it[2]}</button>`;
+  }).join("");
+}
+let VOICEMODE=false, vmInt=null;
+function openVoiceMode(){
+  const vm=document.getElementById("voicemode"); if(!vm)return;
+  VOICEMODE=true; vm.classList.add("open"); vmPaint();
+  if(!REC && !(Speech&&Speech.playing&&Speech.playing())) toggleMic();
+  if(vmInt)clearInterval(vmInt); vmInt=setInterval(vmPaint,180);
+}
+function closeVoiceMode(){
+  const vm=document.getElementById("voicemode"); if(!vm)return;
+  VOICEMODE=false; CONVO=false;
+  try{ if(REC)REC.stop(); }catch(e){}
+  try{ Speech.stop(); }catch(e){}
+  vm.classList.remove("open","listening","speaking");
+  if(vmInt){clearInterval(vmInt); vmInt=null;}
+}
+function vmPaint(){
+  const vm=document.getElementById("voicemode"); if(!vm||!vm.classList.contains("open"))return;
+  const listening=!!REC, speaking=(typeof Speech!=="undefined"&&Speech.playing&&Speech.playing());
+  vm.classList.toggle("listening",listening&&!speaking);
+  vm.classList.toggle("speaking",!!speaking);
+  const st=document.getElementById("vmstatus"); if(st)st.textContent=speaking?"Kera is speaking":listening?"Listening…":"Tap the orb to talk";
+  const tr=document.getElementById("vmtranscript");
+  if(tr){
+    const last=(typeof BRAIN!=="undefined"?BRAIN:[]).slice(-4);
+    tr.innerHTML=last.map(m=>`<div class="vmline ${m.role==='ai'?'kera':'you'}"><span class="who">${m.role==='ai'?'Kera':'You'}</span>${esc((m.text||"").replace(/\[[a-z]+-[a-z0-9]+\]/gi,"").slice(0,500))}</div>`).join("");
+    tr.scrollTop=tr.scrollHeight;
+  }
+}
 async function boot(){
   await Store.init();
   SETTINGS=Object.assign(defSettings(),await Store.get(SET_KEY)||{});
   DB=await Store.get(DB_KEY);AUDIT=await Store.get(AUDIT_KEY)||[];
   if(!DB||!DB.hospitals){DB=blankDB();seed();await Store.set(DB_KEY,DB);await Store.set(AUDIT_KEY,AUDIT)}
   Object.keys(blankDB()).forEach(k=>{if(DB[k]===undefined)DB[k]=k==="meta"?{}:[]});
+  await purgeSeededReqs();
   let mig=false;
   for(const d of DB.documents){if(d.fileB64){await Store.set("wuos:file:"+d.id,{media:d.fileMedia||"application/pdf",b64:d.fileB64});delete d.fileB64;delete d.fileMedia;d.hasFile=true;mig=true}}
   if(mig)await Store.set(DB_KEY,DB);
@@ -2691,7 +2839,7 @@ async function boot(){
   document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();openSearch()}if(e.key==="Escape"){closeSearch();closeModal();closeNav()}});
   $("#sov").addEventListener("click",e=>{if(e.target.id==="sov")closeSearch()});
   $("#modalveil").addEventListener("click",e=>{if(e.target.id==="modalveil")closeModal()});
-  $("#micbtn").onclick=toggleMic;$("#briefbtn").onclick=runBriefing;$("#orb").onclick=toggleMic;
+  $("#micbtn").onclick=openVoiceMode;$("#briefbtn").onclick=runBriefing;$("#orb").onclick=openVoiceMode;
   startClock();if(SETTINGS.motion==="off")document.body.classList.add("no-motion");
   window.addEventListener("resize",debounce(()=>{if(ROUTE.name==="dashboard")drawUMap();if(ROUTE.name==="graph")drawGraph()},220));
   toast("Universe online · "+(Store.env==="claude"?"persistent memory active":"local mode")+" · "+DB.links.length+" connections","ok");

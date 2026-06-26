@@ -468,9 +468,10 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{animation:none
   </svg>
 </button>
 <div id="brand"><span class="mark"></span><span><span class="sig">UNIVERSE<b>·OS</b></span><span class="sub">MedStar 10-Site Command</span></span></div>
-    <div id="sysline"><span id="clock">--:--:--</span><span id="cloudchip"></span><span id="alertbeacon" title="Open attention queue"><span class="led idle" id="beaconled"></span><span id="beacontxt">scanning</span></span></div>
+    <div id="sysline"><span id="clock">--:--:--</span><span id="cloudchip" onclick="go('#/settings')" style="cursor:pointer" title="Cloud Sync &amp; Settings"></span><span id="alertbeacon" title="Open attention queue"><span class="led idle" id="beaconled"></span><span id="beacontxt">scanning</span></span></div>
     <div id="gsearch"><span class="ico">⌖</span><input id="gsearchinput" placeholder="Command search — find or ask anything…" readonly><kbd>CTRL K</kbd></div>
     <div id="topbtns">
+      <button class="tbtn" onclick="go('#/settings')" title="Settings &amp; Cloud Sync">⚒ Settings</button>
       <button class="tbtn" onclick="go('#/ingest')">⇣ Ingest</button>
       <button class="tbtn mic" id="micbtn" title="Voice command">◉ Voice</button>
       <button class="tbtn amber" id="briefbtn">⚡ Briefing</button>
@@ -486,6 +487,7 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{animation:none
 <div id="sov"><div id="sbox"><input id="sinput" placeholder="Type to search · Enter to open · first row asks the Brain"><div id="sres"></div></div></div>
 <style>
 #bottombar{display:none}
+#navcollapse{display:none}
 #voicemode{position:fixed;inset:0;z-index:80;display:none;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 38%,rgba(13,30,46,.97),rgba(4,7,12,.99));backdrop-filter:blur(8px)}
 #voicemode.open{display:flex}
 #vmclose{position:absolute;top:calc(16px + env(safe-area-inset-top,0px));right:18px;background:var(--glass2);border:1px solid var(--stroke2);color:var(--silver);width:38px;height:38px;border-radius:50%;font-size:15px;cursor:pointer;z-index:2}
@@ -523,6 +525,17 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{animation:none
 .rightnow .rn-item.warn{border-left-color:var(--warn)}
 .rightnow .rn-item.ok{border-left-color:var(--ok)}
 .rightnow .rn-clear{font-size:12px;color:var(--ok)}
+.pmatrix{display:flex;flex-direction:column;gap:6px}
+.pmrow{display:flex;align-items:flex-start;gap:10px}
+.pmsite{flex:0 0 50px;font-family:var(--mono);font-size:11px;color:var(--cyan2);cursor:pointer;padding-top:5px;letter-spacing:.04em}
+.pmsite:hover{color:var(--cyan)}
+.pmprojs{flex:1;display:flex;flex-wrap:wrap;gap:5px;min-width:0}
+.pmchip{font-size:11px;color:var(--ink);background:rgba(255,255,255,.04);border:1px solid var(--stroke);border-left:2px solid var(--ink3);border-radius:3px;padding:4px 9px;cursor:pointer;transition:all .14s;text-align:left}
+.pmchip:hover{border-color:var(--cyan);color:var(--cyan2)}
+.pmchip.active{border-left-color:var(--cyan)}
+.pmchip.done{border-left-color:var(--ok)}
+.pmchip.hold{border-left-color:var(--amber)}
+.pmnone{font-size:11px;color:var(--ink3);padding-top:5px}
 .bchips{display:flex;gap:7px;flex-wrap:wrap;margin-top:2px}
 .bchip{font-size:11.5px;color:var(--ink2);background:rgba(86,214,232,.06);border:1px solid rgba(86,214,232,.2);border-radius:14px;padding:5px 11px;cursor:pointer;transition:all .15s}
 .bchip:hover{background:rgba(86,214,232,.14);color:var(--cyan2);border-color:var(--cyan)}
@@ -1076,12 +1089,10 @@ function agingHeatmap(hid){
   return `<div class="heat" style="--hc:5"><div class="heatrow"><span></span>${buckets.map(b=>`<span class="heathead">${b}</span>`).join("")}</div>
   ${rows.map(r=>`<div class="heatrow"><span class="heatlbl">${esc(r.h.code)}</span>${r.cells.map(c=>{const id=reg+(k++);PIPE_REG[id]=[{label:r.h.code+" · "+c.b,items:c.items}];
     return `<div class="heatcell" style="${heatColor(c.amt,max)}" onclick="pipeDrill('${id}',0)" title="${fmt$(c.amt)}">${c.amt?Math.round(c.amt/1000)+"k":""}</div>`}).join("")}</div>`).join("")}</div>`}
+function pmStatusClass(s){s=(s||"").toLowerCase();if(s.includes("complet")||s.includes("closed")||s.includes("done"))return "done";if(s.includes("hold")||s.includes("defer")||s.includes("block")||s.includes("stall"))return "hold";if(s.includes("active")||s.includes("progress")||s.includes("open"))return "active";return ""}
 function complianceMatrix(){
-  const cats=DB.meta.PROJECTCats||[];let k=0;
-  const data=DB.hospitals.map(h=>({h,cells:cats.map(c=>{const items=byHosp(DB.requirements,h.id).filter(q=>q.category===c&&!["Ready","Complete"].includes(q.status));return{c,items}})}));
-  return `<div class="heat" style="--hc:${cats.length}"><div class="heatrow" style="grid-template-columns:64px repeat(${cats.length},1fr)"><span></span>${cats.map(c=>`<span class="heathead" title="${esc(c)}">${esc(c.split(" ")[0].slice(0,5))}</span>`).join("")}</div>
-  ${data.map(r=>`<div class="heatrow" style="grid-template-columns:64px repeat(${cats.length},1fr)"><span class="heatlbl">${esc(r.h.code)}</span>${r.cells.map(c=>{const id="cm"+(k++);PIPE_REG[id]=[{label:r.h.code+" · "+c.c+" gaps",items:c.items}];
-    return `<div class="heatcell" style="${c.items.length?heatColor(c.items.length,4):"background:rgba(63,196,146,.16)"}" onclick="pipeDrill('${id}',0)" title="${esc(c.c)}: ${c.items.length} gaps">${c.items.length||"✓"}</div>`}).join("")}</div>`).join("")}</div>`}
+  const rows=DB.hospitals.map(h=>({h,projs:byHosp(DB.projects,h.id)}));
+  return `<div class="pmatrix">${rows.map(r=>`<div class="pmrow"><span class="pmsite" onclick="go('#/e/hospital/${r.h.id}')" title="${esc(r.h.name||r.h.code)}">${esc(r.h.code)}</span><div class="pmprojs">${r.projs.length?r.projs.map(p=>`<button class="pmchip ${pmStatusClass(p.status)}" onclick="go('#/e/project/${p.id}')" title="${esc((p.summary||p.title||"").slice(0,160))}">${esc((p.title||"Untitled").slice(0,42))}</button>`).join(""):'<span class="pmnone">No projects yet</span>'}</div></div>`).join("")}</div>`}
 function riskRadarSVG(W=340){
   const H=W,cx=W/2,cy=H/2;
   const items=[...DB.risks.filter(r=>r.status==="Open").map(r=>({r,sev:SEV[r.severity]??1,cat:0})),
@@ -1836,7 +1847,7 @@ Views.dashboard=()=>{
       <div id="umap"><svg id="umapsvg"></svg><div id="uhover"></div><div id="umapfoot"></div></div>
       <div class="grid" style="grid-template-columns:1fr 1.2fr;margin-top:13px">
         <div class="panel tight rail-r"><div class="panelhead"><span class="eyebrow" style="color:#f4a9b3">Risk Radar</span><span class="pid">RDR·01</span><span class="xs mut2 right">click a blip → chain</span></div><div id="radarbox">${riskRadarSVG(330)}</div></div>
-        <div class="panel tight"><div class="panelhead"><span class="eyebrow cy">Compliance Readiness Matrix</span><span class="pid">PROJECT·00</span><a class="xs right" href="#/PROJECT">war room →</a></div>${complianceMatrix()}</div>
+        <div class="panel tight"><div class="panelhead"><span class="eyebrow cy">Projects by Site</span><span class="pid">PROJECT·00</span><a class="xs right" href="#/PROJECT">war room →</a></div>${complianceMatrix()}</div>
       </div>
     </div>
     <div class="mcrail stagger">
@@ -1939,7 +1950,7 @@ function hospitalTabs(h){
   if(tab==="emails")body=`<div class="panel tight">${em.map(e=>`<div style="padding:6px 0;border-bottom:1px solid var(--stroke)">${chip(e)} <span class="xs mut2">urgency ${e.urgency||"—"} · ${esc((e.summary||"").slice(0,80))}</span></div>`).join("")||'<div class="empty">No emails ingested for this site.</div>'}</div>`;
   if(tab==="timeline"){const ids=new Set([h.id,...linked(h.id).map(x=>x.id)]);const evs=AUDIT.filter(e=>ids.has(e.entityId)).slice(-25).reverse();
     body=`<div class="panel"><div class="tline">${evs.map(e=>`<div class="tev ${e.src==='ai'?'am':''}"><div class="td">${fmtDT(e.at)}</div><div class="sm">${esc(e.action)} ${esc(e.entityType)} — ${esc((e.summary||"").slice(0,100))}</div></div>`).join("")||'<div class="empty">Quiet so far.</div>'}</div></div>`}
-  return `<div class="tabs">${T("overview","Overview")}${T("invoices","Invoices ("+iv.length+")")}${T("PROJECT","PROJECT Compliance")}${T("docs","Documents ("+dc.length+")")}${T("emails","Emails ("+em.length+")")}${T("timeline","Timeline")}</div>${body}`;
+  return `<div class="tabs">${T("overview","Overview")}${T("invoices","Invoices ("+iv.length+")")}${T("PROJECT","Project Delivery")}${T("docs","Documents ("+dc.length+")")}${T("emails","Emails ("+em.length+")")}${T("timeline","Timeline")}</div>${body}`;
 }
 
 /* ============================ INGEST VIEW ============================ */
@@ -2261,14 +2272,14 @@ function reqDetail(q){
   </div></div>`;
 }
 Views.PROJECT=()=>{
-  const id=ROUTE.id;if(id){const h=rec(id);if(!h)return `<div class="view"><div class="empty">Hospital not found.</div></div>`;return `<div class="view"><div class="pghead"><div class="grow"><div class="eyebrow am">PROJECT Compliance Command Center</div><h1 class="pg">${esc(h.code)} — project readiness</h1></div><a class="btn" href="#/PROJECT">← Portfolio</a></div>${PROJECTHospBody(h)}</div>`}
+  const id=ROUTE.id;if(id){const h=rec(id);if(!h)return `<div class="view"><div class="empty">Hospital not found.</div></div>`;return `<div class="view"><div class="pghead"><div class="grow"><div class="eyebrow am">War Room — Project Command</div><h1 class="pg">${esc(h.code)} — project readiness</h1></div><a class="btn" href="#/PROJECT">← Portfolio</a></div>${PROJECTHospBody(h)}</div>`}
   const missing=DB.requirements.filter(q=>!["Ready","Complete"].includes(reqAutoStatus(q)));
-  return `<div class="view"><div class="pghead"><div class="grow"><div class="eyebrow am">PROJECT Compliance Command Center</div><h1 class="pg">Project Delivery Readiness · Portfolio</h1>
+  return `<div class="view"><div class="pghead"><div class="grow"><div class="eyebrow am">War Room — Project Command</div><h1 class="pg">Project Delivery Readiness · Portfolio</h1>
     <div class="pgsub">Aka PROJECT · Delivery · project readiness · Project · Project Scope. Evidence-driven: every item links to real WOs, vendor reports, invoices, and documents with source traceability.</div></div></div>
     <div class="grid g3" style="margin-bottom:14px">${DB.hospitals.map(h=>{const sc=PROJECTScore(h.id),gaps=byHosp(missing,h.id).length,dfs=byHosp(DB.deficiencies,h.id).filter(d=>d.status!=="Closed").length;
       return `<div class="htile" onclick="go('#/PROJECT/${h.id}')"><div class="hc"><span class="led ${sc>=80?'ok':sc>=50?'warn':'crit'}"></span>${esc(h.code)}</div><div class="hn">${esc(h.name)}</div>
       <div class="hstats"><div class="hstat"><b>${sc}%</b>ready</div><div class="hstat ${gaps?'w':''}"><b>${gaps}</b>gaps</div><div class="hstat ${dfs?'c':''}"><b>${dfs}</b>deficiencies</div></div></div>`}).join("")}</div>
-    <div class="panel tight" style="margin-bottom:14px"><div class="panelhead"><span class="eyebrow cy">Readiness Matrix · Hospital × Category</span><span class="pid">PROJECT·MX</span><span class="xs mut2 right">click any cell → gap list</span></div>${complianceMatrix()}</div>
+    <div class="panel tight" style="margin-bottom:14px"><div class="panelhead"><span class="eyebrow cy">Projects by Site</span><span class="pid">PROJECT·MX</span><span class="xs mut2 right">tap a project to open it</span></div>${complianceMatrix()}</div>
     <div class="panel"><div class="panelhead"><span class="eyebrow am">Missing Evidence — Portfolio</span><span class="xs mut2 right">${missing.length} items</span></div>
     ${missing.slice(0,30).map(q=>{const h=hospOf(q.id);return `<div class="flexr sm" style="padding:5px 0;border-bottom:1px solid var(--stroke)"><span class="mono xs" style="width:62px;color:var(--amber2)">${h?esc(h.code):""}</span><a href="#/e/requirement/${q.id}" style="flex:1">${esc(q.title)}</a>${statBadge(q.status)}</div>`}).join("")||'<div class="empty">Every item has evidence. Strong position.</div>'}</div></div>`;
 };
@@ -2778,7 +2789,7 @@ async function resetAll(){for(const d of (DB.documents||[]).filter(x=>x.hasFile)
 let ROUTE={name:"dashboard"};
 const NAV=[["Command",[["dashboard","◈","Dashboard"],["map","▦","Operations Map"],["hospitals","⬢","Hospitals"],["graph","✦","Knowledge Graph"],["brain","◎","AI Brain"]]],
   ["Operate",[["ingest","⇣","Ingest Data"],["projects","◧","Projects"],["invoices","⌸","Invoices"],["email","✉","Email Intel"],["risks","⚠","Risks"],["actions","➤","Actions"],["vendors","⬡","Vendors"]]],
-  ["Learn",[["help","?","Tips & How-To"]]],["Comply & Report",[["PROJECT","☑","PROJECT Compliance"],["calendar","▦","Calendar"],["reports","▥","Reports"],["settings","⚒","Settings"]]]];
+  ["Learn",[["help","?","Tips & How-To"]]],["Comply & Report",[["PROJECT","☑","War Room"],["calendar","▦","Calendar"],["reports","▥","Reports"],["settings","⚒","Settings"]]]];
 function navBadge(name){
   if(name==="actions")return DB.actions.filter(a=>a.status==="Open"&&isPast(a.due)).length;
   if(name==="workorders")return openWOs().filter(w=>isPast(w.due)).length;
@@ -2790,7 +2801,11 @@ function renderNav(){
   $("#nav").innerHTML=NAV.map(([sec,items])=>`<div class="navsec">${sec}</div>`+items.map(([n,ic,l])=>{const b=navBadge(n);
     return `<div class="navitem ${ROUTE.name===n?"active":""}" onclick="go('#/${n}')"><span class="ni">${ic}</span>${l}<span class="badge ${b?"":"zero"}">${b}</span></div>`}).join("")).join("");
 }
-function toggleNav(){document.body.classList.toggle("navopen")}
+function toggleNav(){
+  if(window.matchMedia("(max-width:900px)").matches){document.body.classList.toggle("navopen");}
+  else{const s=document.getElementById("shell");if(s)s.classList.toggle("nav-collapsed");}
+}
+function toggleSidebarCollapse(){const s=document.getElementById("shell");if(s)s.classList.toggle("nav-collapsed")}
 function closeNav(){document.body.classList.remove("navopen")}
 function go(hash){closeNav();if(location.hash===hash)render();else location.hash=hash}
 function parseRoute(){

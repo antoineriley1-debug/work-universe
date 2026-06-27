@@ -946,7 +946,7 @@ function snapshotFor(query,max=34){
   for(const r of [...recent,...base,...extra]){if(seen.has(r.id))continue;seen.add(r.id);
     const t=typeOf(r.id);if(!ENT[t])continue;const h=hospOf(r.id);
     rows.push("["+r.id+"] "+ENT[t].label+" | "+(h?h.code+" | ":"")+
-      [nameOf(r),r.status,r.severity,r.owner&&("owner:"+r.owner),r.due&&("due:"+r.due),r.dueDate&&("due:"+r.dueDate),r.amount!=null&&fmt$(r.amount),r.vendorName,(r.summary||r.body||r.text||"").slice(0,180)].filter(Boolean).join(" | "));
+      [nameOf(r),r.status,r.severity,r.owner&&("owner:"+r.owner),r.due&&("due:"+r.due),r.dueDate&&("due:"+r.dueDate),r.amount!=null&&fmt$(r.amount),r.vendorName,(r.summary||r.body||r.text||"").slice(0,400)].filter(Boolean).join(" | "));
     if(rows.length>=max+12)break;
   }
   return rows.join("\n");
@@ -991,8 +991,9 @@ function fuzzyFind(type,name){
 function hospByCode(code){if(!code)return null;return DB.hospitals.find(h=>h.code.toLowerCase()===String(code).toLowerCase())||DB.hospitals.find(h=>h.name.toLowerCase().includes(String(code).toLowerCase()))||null}
 
 let PENDING=null; // {ex, raw:{text,b64,media}, filename, sourceKind}
+function recommitHospital(docId,code){const h=hospByCode(code);const d=rec(docId);if(!d)return;d.hospitalId=h?h.id:null;if(h)link(docId,h.id,"site","ai");saveDB();toast(h?("Re-linked to "+h.code):"Set to portfolio-level","ok");}
 function commitExtraction(){
-  const ex=PENDING.ex, hosp=hospByCode($("#rvHosp").value)||null;
+  const ex=PENDING.ex, hosp=hospByCode(($("#rvHosp")?.value)||ex.hospital||"")||null;
   const created=[],linkedTo=[];
   const doc=addRec("document",{title:PENDING.filename||("Pasted "+(ex.docType||"note")),docType:ex.docType,summary:ex.summary,text:(PENDING.raw.text||"").slice(0,40000),hospitalId:hosp?hosp.id:null,urgency:ex.urgency||null,complianceTags:ex.complianceTags||[]},"ai");
   if(PENDING.raw.b64&&PENDING.raw.b64.length<2600000){doc.hasFile=true;Store.set("wuos:file:"+doc.id,{media:PENDING.raw.media||"application/octet-stream",b64:PENDING.raw.b64})}
@@ -1019,9 +1020,10 @@ function commitExtraction(){
   PENDING=null;
   const _tx=$("#pastebox");if(_tx)_tx.value="";
   const _ib=$("#isEmail");if(_ib)_ib.checked=false;
-  const _rv=$("#reviewbox");if(_rv)_rv.innerHTML="";
-  const _pb=$("#procbox");if(_pb)_pb.innerHTML='<div class="procwrap"><div class="proclog"><div class="ok">✓ COMPLETE — '+created.length+" item"+(created.length>1?"s":"")+' committed to Kera\'s memory. Ready for the next upload.</div></div></div>';
-  toast("✓ Complete — "+created.length+" item"+(created.length>1?"s":"")+" added to Kera's memory","ok");
+  const _pb=$("#procbox");if(_pb)_pb.innerHTML='<div class="procwrap"><div class="proclog"><div class="ok">✓ COMPLETE — '+created.length+" item"+(created.length>1?"s":"")+' committed to Kera\'s memory.</div></div></div>';
+  const _rv=$("#reviewbox");
+  if(_rv)_rv.innerHTML='<div class="panel rail-a"><div class="panelhead"><span class="eyebrow am">✓ In Kera\'s Memory</span><span class="pid">ING·✓</span><span class="sm mut right mono">'+esc(doc.title||"")+'</span></div><div class="sm" style="margin:8px 0 10px">'+esc(ex.summary||"Saved.")+'</div><div class="formrow"><label>Hospital</label><select onchange="recommitHospital(\''+doc.id+'\',this.value)"><option value="">— not site-specific —</option>'+DB.hospitals.map(h=>'<option value="'+h.code+'" '+(hosp&&hosp.code===h.code?"selected":"")+'>'+h.code+" — "+esc(h.name)+'</option>').join("")+'</select></div><div class="flexr" style="margin-top:10px"><button class="btn primary" onclick="go(\'#/brain\')">◎ Ask Kera about this</button><button class="btn" onclick="go(\'#/e/document/'+doc.id+'\')">Open record →</button><span class="xs mut2">'+created.length+' item'+(created.length>1?"s":"")+' linked · already searchable.</span></div></div>';
+  toast("✓ Added to Kera's memory — "+created.length+" item"+(created.length>1?"s":""),"ok");
 }
 
 /* ============================ SHARED RENDER HELPERS ============================ */
@@ -1993,10 +1995,9 @@ async function runExtraction(blocks,raw,filename,sourceKind){
     await step("✓ extraction complete","ok");
     const conf=ex.confidence||{};
     await step("match confidence — hospital "+(conf.hospital??(ex.hospital?85:20))+"% · vendor "+(conf.vendor??((ex.vendors||[]).length?80:0))+"% · project "+(conf.project??((ex.projects||[]).length?70:0))+"%","am");
-    await step("relationship mapping → review board","ok");
+    await step("relationship mapping → committing to memory","ok");
     PENDING={ex,raw,filename,sourceKind};
-    renderReview();
-    procDone(true,"extraction done — review & commit below");
+    commitExtraction();
   }catch(e){orbDone();procDone(false,e.message);toast(e.message,"err")}
 }
 function xplodeSVG(ex){
